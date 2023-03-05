@@ -7,6 +7,12 @@
 
 using namespace kouek;
 
+struct State {
+    float t;
+    glm::uint gi;
+    glm::uint fi;
+};
+
 __constant__ RenderInfo dc_rndrInfo;
 __constant__ SceneInfo dc_scnInfo;
 __constant__ glm::mat3 dc_camRot;
@@ -94,23 +100,25 @@ inline __device__ bool rayIntersectTriangle(float &tOut, float &uOut,
     return false;
 }
 
-__device__ bool rayIntersectBVH(glm::uint &outHitFaceIdx, glm::vec3 &outRayPos,
+__device__ bool rayIntersectBVH(State &outState, const glm::vec3 &rayPos,
                                 const glm::vec3 &rayDir) {
     struct StkElemTy {
         uint8_t visitCnt;
-        glm::uint nodeIdx;
+        glm::uint bvhIdx;
+        glm::uint grpIdx;
     };
     using StkPtrTy = uint8_t;
     static constexpr StkPtrTy MaxStkNum = 64;
     StkElemTy stk[MaxStkNum];
     StkPtrTy stkEndPtr = 0;
 
-    auto push = [&](glm::uint nodeIdx) {
+    auto push = [&](glm::uint bvhIdx, glm::uint grpIdx = NoneIdx) {
         if (stkEndPtr == MaxStkNum)
             return;
         auto &elem = stk[stkEndPtr++];
         elem.visitCnt = 0;
-        elem.nodeIdx = nodeIdx;
+        elem.bvhIdx = bvhIdx;
+        elem.grpIdx = grpIdx;
     };
     auto pop = [&]() { --stkEndPtr; };
     auto top = [&]() -> StkElemTy & { return stk[stkEndPtr - 1]; };
@@ -120,15 +128,16 @@ __device__ bool rayIntersectBVH(glm::uint &outHitFaceIdx, glm::vec3 &outRayPos,
     push(0);
     while (!empty()) {
         auto &stkElem = top();
+        auto gi = stkElem.grpIdx;
         if (stkElem.visitCnt == 2) {
             pop();
             continue;
         }
 
-        const auto &curr = dc_scnInfo.bvh[stkElem.nodeIdx];
+        const auto &curr = dc_scnInfo.bvh[stkElem.bvhIdx];
 
         float tMin, tMax;
-        if (!rayIntersectAABB(tMin, tMax, outRayPos, rayDir, curr.aabb.min,
+        if (!rayIntersectAABB(tMin, tMax, rayPos, rayDir, curr.aabb.min,
                               curr.aabb.max)) {
             pop();
             continue;
@@ -144,7 +153,7 @@ __device__ bool rayIntersectBVH(glm::uint &outHitFaceIdx, glm::vec3 &outRayPos,
             auto childIdx = 0 == stkElem.visitCnt++ ? curr.dat[0] : curr.dat[1];
             if (leafIsBVHNode)
                 childIdx ^= BVHNode::BVHNodeLeafBitFlag;
-            push(childIdx);
+            push(childIdx, gi);
             continue;
         }
 
@@ -155,14 +164,15 @@ __device__ bool rayIntersectBVH(glm::uint &outHitFaceIdx, glm::vec3 &outRayPos,
         for (glm::uint cnt = 0; cnt < curr.dat[1]; ++cnt, ++idx)
             if (leafIsBVHNode) {
                 auto grpIdx = dc_scnInfo.groups[idx];
-                auto faceBVHNodeIdx = dc_scnInfo.grp2FaceBVHNodeIndices[grpIdx];
-                push(faceBVHNodeIdx);
+                auto faceBVHNodeIdx = dc_scnInfo.grp2faceBVHNodeIndices[grpIdx];
+                push(faceBVHNodeIdx, grpIdx);
             } else {
                 float u, v;
-                if (rayIntersectTriangle(tMin, u, v, outRayPos, rayDir, idx)) {
+                if (rayIntersectTriangle(tMin, u, v, rayPos, rayDir, idx)) {
                     if (tNear > tMin) {
                         tNear = tMin;
-                        outHitFaceIdx = idx;
+                        outState.gi = gi;
+                        outState.fi = idx;
                     }
                 }
             }
@@ -171,7 +181,7 @@ __device__ bool rayIntersectBVH(glm::uint &outHitFaceIdx, glm::vec3 &outRayPos,
     if (tNear == +INFINITY)
         return false;
 
-    outRayPos = outRayPos + tNear * rayDir;
+    outState.t = tNear;
     return true;
 }
 
@@ -199,17 +209,24 @@ __global__ void rayTrace(cudaSurfaceObject_t output) {
     };
 
     auto rayPos = dc_camPos;
-    glm::uint hitFaceIdx = NoneIdx;
+    State state;
 
-    if (!rayIntersectBVH(hitFaceIdx, rayPos, rayDir)) {
+    if (!rayIntersectBVH(state, rayPos, rayDir)) {
         setToBkgrnd();
         return;
     }
 
-    auto rng = dc_scnInfo.bvh[0].aabb.max - dc_scnInfo.bvh[0].aabb.min;
-    auto p = (rayPos - dc_scnInfo.bvh[0].aabb.min) / rng;
-    surf2Dwrite(rgbaFloat4ToUChar4(make_float4(p.x, p.y, p.z, 1.f)), output,
-                rndrPos.x * 4, rndrPos.y);
+    auto mtl = dc_scnInfo.mtls[dc_scnInfo.grp2mtls[state.gi]];
+    rayPos += state.t * rayDir;
+    rayPos = (rayPos - dc_scnInfo.bvh[0].aabb.min) /
+             (dc_scnInfo.bvh[0].aabb.max - dc_scnInfo.bvh[0].aabb.min);
+    auto col =
+        rgbaFloat4ToUChar4(make_float4(rayPos.x, rayPos.y, rayPos.z, 1.f));
+    surf2Dwrite(col, output, rndrPos.x * 4, rndrPos.y);
+    
+    for (glm::uint depth = 0; depth < dc_rndrInfo.maxDepth; ++depth) {
+        
+    }
 }
 
 void kouek::render(cudaSurfaceObject_t output, const glm::uvec2 &rndrRes) {

@@ -179,59 +179,107 @@ int main(int argc, char **argv) {
         }();
         scnPath.append("/");
 
-        try {
-            tinyxml2::XMLDocument doc;
-            doc.LoadFile((scnPath + scnName + ".xml").c_str());
-            if (doc.Error())
-                throw std::runtime_error(doc.ErrorIDToName(doc.ErrorID()));
-            auto par = doc.FirstChildElement("camera");
-            auto eye = par->FirstChildElement("eye");
-            auto cntr = par->FirstChildElement("lookat");
-            auto up = par->FirstChildElement("up");
-            cam.LookAt({eye->FloatAttribute("x"), eye->FloatAttribute("y"),
-                        eye->FloatAttribute("z")},
-                       {cntr->FloatAttribute("x"), cntr->FloatAttribute("y"),
-                        cntr->FloatAttribute("z")},
-                       {up->FloatAttribute("x"), up->FloatAttribute("y"),
-                        up->FloatAttribute("z")});
-            
-            onCamModified();
-        } catch (std::exception &e) {
-            std::cout << "[WARNING] Failed to read scene configuration: "
-                      << e.what() << std::endl;
-        }
-
         auto scn = std::make_shared<RayTraceScn>();
         scn->SetBackgroundColor({.1f, .2f, .25f});
 
+        auto mesh = std::make_shared<Mesh>();
         try {
-            auto mesh = std::make_shared<Mesh>();
-            mesh->LoadFromFile(scnPath + scnName + ".obj");
+            mesh->LoadFromFile(scnPath + scnName + ".obj",
+                               scnPath + scnName + ".mtl");
 
             std::cout << "Load scene: " << scnName << std::endl;
             std::cout << ">> vertices num: " << mesh->GetVS().size()
                       << std::endl;
             std::cout << ">> faces num: " << mesh->GetFS().size() << std::endl;
             auto &gs = mesh->GetGS();
-            std::cout << ">> groups num" << gs.size() - 1 << std::endl;
+            std::cout << ">> groups num: " << gs.size() - 1 << std::endl;
             for (glm::uint gi = 0; gi < gs.size() - 1; ++gi) {
                 std::cout << ">> group " << gi << ", covers faces [" << gs[gi]
                           << ", " << gs[gi + 1] << ")" << std::endl;
                 std::cout << ">>>> material name: "
-                          << mesh->GetGrp2MatrNames().at(gi) << std::endl;
+                          << mesh->GetGrp2MtlNames().at(gi) << std::endl;
             }
 
-            auto [min, max] = mesh->GetMinMaxPos();
-            auto [R, F, U, P] = cam.GetRFUP();
-            cntrPos = P + glm::distance(P, (min + max) * .5f) * F;
+            {
+                auto [min, max] = mesh->GetMinMaxPos();
+                auto [R, F, U, P] = cam.GetRFUP();
+                cntrPos = P + glm::distance(P, (min + max) * .5f) * F;
 
-            scn->SetModel(mesh);
-            scn->BuildBVH();
+                scn->SetModel(mesh);
+                scn->BuildBVH();
+            }
+
             renderer.SetScene(scn);
         } catch (std::exception &e) {
             std::cout << "[ERROR] Failed to load scene models: " << e.what()
                       << std::endl;
             goto TERMINAL;
+        }
+
+        try {
+            tinyxml2::XMLDocument doc;
+            doc.LoadFile((scnPath + scnName + ".xml").c_str());
+            if (doc.Error())
+                throw std::runtime_error(doc.ErrorIDToName(doc.ErrorID()));
+            {
+                auto par = doc.FirstChildElement("camera");
+                auto eye = par->FirstChildElement("eye");
+                auto cntr = par->FirstChildElement("lookat");
+                auto up = par->FirstChildElement("up");
+                cam.LookAt({eye->FloatAttribute("x"), eye->FloatAttribute("y"),
+                            eye->FloatAttribute("z")},
+                           {cntr->FloatAttribute("x"),
+                            cntr->FloatAttribute("y"),
+                            cntr->FloatAttribute("z")},
+                           {up->FloatAttribute("x"), up->FloatAttribute("y"),
+                            up->FloatAttribute("z")});
+
+                onCamModified();
+            }
+            if (!mesh->GetGrp2MtlNames().empty()) {
+                auto mtlNames2mtl = [&]() {
+                    std::unordered_map<std::string, glm::uint> ret;
+                    auto &g2mtls = mesh->GetG2Mtls();
+                    for (auto &[gi, mtlName] : mesh->GetGrp2MtlNames())
+                        ret.emplace(std::piecewise_construct,
+                                    std::forward_as_tuple(mtlName),
+                                    std::forward_as_tuple(g2mtls[gi]));
+                    return ret;
+                }();
+                
+                auto light = doc.FirstChildElement("light");
+                auto getRadiance = [&](decltype(light) &light) -> glm::vec3 {
+                    auto ret = glm::zero<glm::vec3>();
+                    const char *buf;
+                    auto err = light->QueryStringAttribute("radiance", &buf);
+                    if (err != tinyxml2::XML_SUCCESS)
+                        throw std::runtime_error("No radiance");
+                    sscanf(buf, "%f,%f,%f", &ret.x, &ret.y, &ret.z);
+                    return ret;
+                };
+                
+                std::vector<std::tuple<glm::uint, Mesh::Light>> lights;
+                Mesh::Light lht;
+                std::string name;
+                while (light != nullptr) {
+                    const char *buf;
+                    auto err = light->QueryStringAttribute("mtlname", &buf);
+                    if (err != tinyxml2::XML_SUCCESS)
+                        throw std::runtime_error("No mtlname");
+                    name = buf;
+                    lht.radiance = getRadiance(light);
+
+                    lights.emplace_back(
+                        std::make_tuple(mtlNames2mtl[name], lht));
+
+                    light = light->NextSiblingElement("light");
+                }
+
+                mesh->SetMtlAsLights(lights);
+            }
+        } catch (std::exception &e) {
+            std::cout << "[WARNING] Failed to read scene configuration: "
+                      << e.what() << std::endl;
         }
     }
 

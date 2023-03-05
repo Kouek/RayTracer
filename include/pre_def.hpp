@@ -41,6 +41,7 @@ template <typename T> struct Updatable {
 
 struct RenderInfo {
     glm::uvec2 res;
+    glm::uint maxDepth;
 };
 
 struct AABBBox {
@@ -124,12 +125,14 @@ struct SceneInfo {
     glm::uint faceNum;
     glm::vec3 bkgrndCol;
     const BVHNode *bvh;
-    const glm::uint *grp2FaceBVHNodeIndices;
+    const glm::uint *grp2faceBVHNodeIndices;
+    const glm::uint *grp2mtls;
+    const glm::uint *groups;
     const glm::vec3 *positions;
     const glm::vec2 *uvs;
     const glm::vec3 *normals;
+    const Mesh::Material *mtls;
     const Mesh::Face2Idx3 *faces;
-    const glm::uint *groups;
 };
 
 // CUDA dim3 doesn't support constexpr construction, use const

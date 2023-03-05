@@ -14,10 +14,6 @@ void kouek::RayTraceScn::SetModel(std::shared_ptr<Mesh> mesh) {
 }
 
 void kouek::RayTraceScn::BuildBVH() {
-    d_positions = mesh->GetVS();
-    d_uvs = mesh->GetVTS();
-    d_normals = mesh->GetVNS();
-
     std::vector<Mesh::Face2Idx3> bvhFaces;
     bvhFaces.reserve(mesh->GetFS().size());
     std::vector<glm::uint> bvhGrps;
@@ -156,8 +152,7 @@ void kouek::RayTraceScn::BuildBVH() {
                 for (glm::uint i = 0; i < param.num; ++i)
                     bvhFaces.emplace_back(
                         fs[grpFstFaceIdx + indices[param.start + i]]);
-            }
-            else {
+            } else {
                 node.dat[0] = bvhGrps.size() | BVHNode::BVHNodeLeafBitFlag;
                 node.dat[1] = param.num;
                 for (glm::uint i = 0; i < param.num; ++i)
@@ -349,11 +344,11 @@ void kouek::RayTraceScn::BuildBVH() {
     d_bvh.insert(d_bvh.end(), bvh.begin(), bvh.end());
 
     // Compute the offsets of face BVHs in flat mem
-    std::vector<glm::uint> grp2FaceBVHNodeIndices;
-    grp2FaceBVHNodeIndices.reserve(gs.size());
+    std::vector<glm::uint> grp2faceBVHNodeIndices;
+    grp2faceBVHNodeIndices.reserve(gs.size());
     d_bvhNum = bvh.size(); // offset by group BVH
     for (auto &faceBVH : faceBVHs) {
-        grp2FaceBVHNodeIndices.emplace_back(d_bvhNum);
+        grp2faceBVHNodeIndices.emplace_back(d_bvhNum);
 
         auto currStart = d_bvh.end();
         d_bvh.insert(currStart, faceBVH.begin(), faceBVH.end());
@@ -368,22 +363,30 @@ void kouek::RayTraceScn::BuildBVH() {
                           });
         d_bvhNum += faceBVH.size(); // offset by previous face BVHs
     }
-    grp2FaceBVHNodeIndices.emplace_back(d_bvhNum);
+    grp2faceBVHNodeIndices.emplace_back(d_bvhNum);
 
-    d_grp2FaceBVHNodeIndices = grp2FaceBVHNodeIndices;
+    d_grp2faceBVHNodeIndices = grp2faceBVHNodeIndices;
+
+    d_positions = mesh->GetVS();
+    d_uvs = mesh->GetVTS();
+    d_normals = mesh->GetVNS();
+    d_mtls = mesh->GetMtls();
+    d_grp2mtls = mesh->GetG2Mtls();
 }
 
 SceneInfo kouek::RayTraceScn::GetScnInfo() const {
     SceneInfo info;
     info.faceNum = d_faces.size();
     info.bkgrndCol = bkgrndCol;
-    info.grp2FaceBVHNodeIndices =
-        thrust::raw_pointer_cast(d_grp2FaceBVHNodeIndices.data());
+    info.grp2faceBVHNodeIndices =
+        thrust::raw_pointer_cast(d_grp2faceBVHNodeIndices.data());
+    info.grp2mtls = thrust::raw_pointer_cast(d_grp2mtls.data());
+    info.groups = thrust::raw_pointer_cast(d_groups.data());
     info.bvh = thrust::raw_pointer_cast(d_bvh.data());
     info.positions = thrust::raw_pointer_cast(d_positions.data());
     info.uvs = thrust::raw_pointer_cast(d_uvs.data());
     info.normals = thrust::raw_pointer_cast(d_normals.data());
+    info.mtls = thrust::raw_pointer_cast(d_mtls.data());
     info.faces = thrust::raw_pointer_cast(d_faces.data());
-    info.groups = thrust::raw_pointer_cast(d_groups.data());
     return info;
 }

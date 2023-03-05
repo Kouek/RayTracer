@@ -29,10 +29,12 @@ class RayTraceScn {
     thrust::device_vector<glm::vec3> d_positions;
     thrust::device_vector<glm::vec2> d_uvs;
     thrust::device_vector<glm::vec3> d_normals;
+    thrust::device_vector<Mesh::Material> d_mtls;
     thrust::device_vector<Mesh::Face2Idx3> d_faces;
     thrust::device_vector<glm::uint> d_groups;
+    thrust::device_vector<glm::uint> d_grp2mtls;
 
-    thrust::device_vector<glm::uint> d_grp2FaceBVHNodeIndices;
+    thrust::device_vector<glm::uint> d_grp2faceBVHNodeIndices;
     thrust::device_vector<BVHNode> d_bvh;
 
   public:

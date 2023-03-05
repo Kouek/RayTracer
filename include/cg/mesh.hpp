@@ -23,16 +23,32 @@ class Mesh {
         glm::uvec3 n;
     };
 
+    struct Light {
+        glm::vec3 radiance;
+    };
+
+    struct Material {
+        bool isLight;
+        glm::vec3 kd;
+        glm::vec3 ks;
+        glm::vec3 tr;
+        float ns;
+        float ni;
+        Light light;
+    };
+
   private:
     glm::vec3 minPos, maxPos;
 
     std::vector<glm::vec3> vs;
     std::vector<glm::vec2> vts;
     std::vector<glm::vec3> vns;
+    std::vector<Material> mtls;
     std::vector<Face2Idx3> fs;
     std::vector<glm::uint> gs;
+    std::vector<glm::uint> g2mtls;
 
-    std::unordered_map<glm::uint, std::string> grp2MatrNames;
+    std::unordered_map<glm::uint, std::string> grp2mtlNames;
 
   public:
     inline const auto &GetMinMaxPos() const {
@@ -41,20 +57,110 @@ class Mesh {
     inline const auto &GetVS() const { return vs; }
     inline const auto &GetVTS() const { return vts; }
     inline const auto &GetVNS() const { return vns; }
+    inline const auto &GetMtls() const { return mtls; }
     inline const auto &GetFS() const { return fs; }
     inline const auto &GetGS() const { return gs; }
-    inline const auto &GetGrp2MatrNames() const { return grp2MatrNames; }
-    void LoadFromFile(const std::string &path, bool swapXYZ = false) {
+    inline const auto &GetG2Mtls() const { return g2mtls; }
+    inline const auto &GetGrp2MtlNames() const { return grp2mtlNames; }
+
+    void LoadFromFile(const std::string &objPath,
+                      const std::string &mtlPath = "", bool swapXYZ = false) {
         Clear();
 
         using namespace std;
-        ifstream in(path.c_str());
 
+        std::unordered_map<std::string, glm::uint> mtlName2IDs;
+        readInMtl(mtlPath, mtlName2IDs);
+        readInObj(objPath, mtlName2IDs, swapXYZ);
+    }
+
+    void
+    SetMtlAsLights(const std::vector<std::tuple<glm::uint, Light>> &lights) {
+        for (auto &[mi, lht] : lights) {
+            mtls[mi].isLight = true;
+            mtls[mi].light = lht;
+        }
+    }
+
+    inline void Clear() {
+        minPos = glm::vec3{std::numeric_limits<float>::max()};
+        maxPos = glm::vec3{std::numeric_limits<float>::min()};
+
+        vs.clear();
+        vs.shrink_to_fit();
+        vts.clear();
+        vts.shrink_to_fit();
+        vns.clear();
+        vns.shrink_to_fit();
+        fs.clear();
+        fs.shrink_to_fit();
+
+        mtls.clear();
+        mtls.shrink_to_fit();
+        g2mtls.clear();
+        g2mtls.shrink_to_fit();
+        grp2mtlNames.clear();
+    }
+
+  private:
+    void readInMtl(const std::string &path,
+                   std::unordered_map<std::string, glm::uint> &mtlName2IDs) {
+        using namespace std;
+
+        if (path.empty())
+            return;
+
+        ifstream in(path.c_str());
         if (!in.is_open())
             throw std::runtime_error(
-                string(path) + " is NOT a valid path. Load model failed.");
+                string(path) +
+                " is NOT a valid path. Load model material failed.");
 
-        static constexpr auto UsemtlLen = std::string_view("usemtl ").size();
+        static constexpr auto Newmtl = std::string_view("newmtl ");
+        static constexpr auto NewmtlLen = Newmtl.size();
+
+        string buf;
+        while (getline(in, buf)) {
+            if (buf[0] == 'K' && buf[1] == 'd') {
+                auto &v3 = mtls.back().kd;
+                sscanf(buf.c_str() + 3, "%f%f%f", &v3.x, &v3.y, &v3.z);
+            } else if (buf[0] == 'K' && buf[1] == 's') {
+                auto &v3 = mtls.back().ks;
+                sscanf(buf.c_str() + 3, "%f%f%f", &v3.x, &v3.y, &v3.z);
+
+            } else if (buf[0] == 'T' && buf[1] == 'r') {
+                auto &v3 = mtls.back().tr;
+                sscanf(buf.c_str() + 3, "%f%f%f", &v3.x, &v3.y, &v3.z);
+
+            } else if (buf[0] == 'N' && buf[1] == 's') {
+                auto &s = mtls.back().ns;
+                sscanf(buf.c_str() + 3, "%f", &s);
+            } else if (buf[0] == 'N' && buf[1] == 'i') {
+                auto &s = mtls.back().ni;
+                sscanf(buf.c_str() + 3, "%f", &s);
+            } else if (buf.substr(0, NewmtlLen) == Newmtl) {
+                mtls.emplace_back();
+                mtls.back().isLight = false;
+                mtlName2IDs.emplace(
+                    std::piecewise_construct,
+                    std::forward_as_tuple(buf.substr(NewmtlLen)),
+                    std::forward_as_tuple((glm::uint)(mtls.size() - 1)));
+            }
+        }
+    }
+
+    void readInObj(const std::string &path,
+                   std::unordered_map<std::string, glm::uint> &mtlName2IDs,
+                   bool swapXYZ = false) {
+        using namespace std;
+
+        ifstream in(path.c_str());
+        if (!in.is_open())
+            throw std::runtime_error(
+                string(path) + " is NOT a valid path. Load model obj failed.");
+
+        static constexpr auto Usemtl = std::string_view("usemtl ");
+        static constexpr auto UsemtlLen = Usemtl.size();
 
         string buf;
         Face2Idx3 f2i3;
@@ -131,13 +237,23 @@ class Mesh {
                     fs.emplace_back(f2i3);
                 }
             } else if (buf.size() > UsemtlLen &&
-                       buf.substr(0, UsemtlLen) == "usemtl ") {
+                       buf.substr(0, UsemtlLen) == Usemtl) {
                 if (gs.empty())
                     gs.emplace_back(0);
-                grp2MatrNames.emplace(
-                    std::piecewise_construct,
-                    std::forward_as_tuple(gs.size() - 1),
+                glm::uint gi = gs.size() - 1;
+                grp2mtlNames.emplace(
+                    std::piecewise_construct, std::forward_as_tuple(gi),
                     std::forward_as_tuple(buf.substr(UsemtlLen)));
+                auto itr = mtlName2IDs.find(grp2mtlNames[gi]);
+                if (itr == mtlName2IDs.end())
+                    throw std::runtime_error(
+                        "No material named " + grp2mtlNames[gi] +
+                        "exists for group " + std::to_string(gi) +
+                        ". Load model failed.");
+                else {
+                    const auto &[name, id] = *itr;
+                    g2mtls.emplace_back(id);
+                }
             }
         }
         if (gs.empty())
@@ -148,21 +264,7 @@ class Mesh {
 
         if (vs.empty() || fs.empty())
             throw std::runtime_error(
-                "File has no vertices or faces. Load model failed.");
-    }
-
-    inline void Clear() {
-        minPos = glm::vec3{std::numeric_limits<float>::max()};
-        maxPos = glm::vec3{std::numeric_limits<float>::min()};
-
-        vs.clear();
-        vs.shrink_to_fit();
-        vts.clear();
-        vts.shrink_to_fit();
-        vns.clear();
-        vns.shrink_to_fit();
-        fs.clear();
-        fs.shrink_to_fit();
+                "Obj File has no vertices or faces. Load model failed.");
     }
 };
 
