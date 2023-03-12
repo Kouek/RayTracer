@@ -14,14 +14,14 @@ void kouek::RayTraceScn::SetModel(std::shared_ptr<Mesh> mesh) {
 }
 
 void kouek::RayTraceScn::BuildBVH() {
-    std::vector<Mesh::Face2Idx3> bvhFaces;
-    bvhFaces.reserve(mesh->GetFS().size());
-    std::vector<glm::uint> bvhGrps;
-    bvhGrps.reserve(mesh->GetGS().size() - 1);
-
     const auto &vs = mesh->GetVS();
     const auto &gs = mesh->GetGS();
     const auto &fs = mesh->GetFS();
+
+    std::vector<Mesh::Face2Idx3> bvhFaces;
+    bvhFaces.reserve(fs.size());
+    std::vector<glm::uint> bvhGrps;
+    bvhGrps.reserve(gs.size() - 1);
 
     AABBBox rootAABB;
     AABBBox cntrRootAABB;
@@ -308,6 +308,8 @@ void kouek::RayTraceScn::BuildBVH() {
         faceBVHs.emplace_back(std::move(bvh));
     }
     d_faces = bvhFaces;
+    bvhFaces.clear();
+    bvhFaces.shrink_to_fit();
 
     // Build BVH for groups
     rootAABB.Reset();
@@ -371,12 +373,14 @@ void kouek::RayTraceScn::BuildBVH() {
     d_uvs = mesh->GetVTS();
     d_normals = mesh->GetVNS();
     d_mtls = mesh->GetMtls();
+    d_lights = mesh->GetLS();
     d_grp2mtls = mesh->GetG2Mtls();
 }
 
 SceneInfo kouek::RayTraceScn::GetScnInfo() const {
     SceneInfo info;
     info.faceNum = d_faces.size();
+    info.lightNum = d_lights.size();
     info.bkgrndCol = bkgrndCol;
     info.grp2faceBVHNodeIndices =
         thrust::raw_pointer_cast(d_grp2faceBVHNodeIndices.data());
@@ -387,6 +391,7 @@ SceneInfo kouek::RayTraceScn::GetScnInfo() const {
     info.uvs = thrust::raw_pointer_cast(d_uvs.data());
     info.normals = thrust::raw_pointer_cast(d_normals.data());
     info.mtls = thrust::raw_pointer_cast(d_mtls.data());
+    info.lights = thrust::raw_pointer_cast(d_lights.data());
     info.faces = thrust::raw_pointer_cast(d_faces.data());
     return info;
 }

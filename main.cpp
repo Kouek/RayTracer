@@ -160,10 +160,14 @@ int main(int argc, char **argv) {
     Shader screenQuadShader(
         (std::string(PROJECT_SOURCE_DIR) + "/screen_quad.vs").c_str(),
         (std::string(PROJECT_SOURCE_DIR) + "/screen_quad.fs").c_str());
+    GLint sqShdrLowResScalePos =
+        glGetUniformLocation(screenQuadShader.ID, "lowResScale");
+    assert(sqShdrLowResScalePos != -1);
 
     // Init Renderer
     renderer.Init();
-    renderer.SetOutput(rndrTex, rndrSz);
+    renderer.SetOutput(rndrTex, rndrSz, 2);
+    renderer.SetMaxDepth(10);
     renderer.SetProjection(proj);
     onCamModified();
 
@@ -178,9 +182,6 @@ int main(int argc, char **argv) {
             return scnPath.substr(scnPath.size() - dist2end);
         }();
         scnPath.append("/");
-
-        auto scn = std::make_shared<RayTraceScn>();
-        scn->SetBackgroundColor({.1f, .2f, .25f});
 
         auto mesh = std::make_shared<Mesh>();
         try {
@@ -197,19 +198,8 @@ int main(int argc, char **argv) {
                 std::cout << ">> group " << gi << ", covers faces [" << gs[gi]
                           << ", " << gs[gi + 1] << ")" << std::endl;
                 std::cout << ">>>> material name: "
-                          << mesh->GetGrp2MtlNames().at(gi) << std::endl;
+                          << mesh->GetG2MtlNames().at(gi) << std::endl;
             }
-
-            {
-                auto [min, max] = mesh->GetMinMaxPos();
-                auto [R, F, U, P] = cam.GetRFUP();
-                cntrPos = P + glm::distance(P, (min + max) * .5f) * F;
-
-                scn->SetModel(mesh);
-                scn->BuildBVH();
-            }
-
-            renderer.SetScene(scn);
         } catch (std::exception &e) {
             std::cout << "[ERROR] Failed to load scene models: " << e.what()
                       << std::endl;
@@ -236,17 +226,7 @@ int main(int argc, char **argv) {
 
                 onCamModified();
             }
-            if (!mesh->GetGrp2MtlNames().empty()) {
-                auto mtlNames2mtl = [&]() {
-                    std::unordered_map<std::string, glm::uint> ret;
-                    auto &g2mtls = mesh->GetG2Mtls();
-                    for (auto &[gi, mtlName] : mesh->GetGrp2MtlNames())
-                        ret.emplace(std::piecewise_construct,
-                                    std::forward_as_tuple(mtlName),
-                                    std::forward_as_tuple(g2mtls[gi]));
-                    return ret;
-                }();
-                
+            if (!mesh->GetG2MtlNames().empty()) {
                 auto light = doc.FirstChildElement("light");
                 auto getRadiance = [&](decltype(light) &light) -> glm::vec3 {
                     auto ret = glm::zero<glm::vec3>();
@@ -257,9 +237,9 @@ int main(int argc, char **argv) {
                     sscanf(buf, "%f,%f,%f", &ret.x, &ret.y, &ret.z);
                     return ret;
                 };
-                
-                std::vector<std::tuple<glm::uint, Mesh::Light>> lights;
-                Mesh::Light lht;
+
+                std::vector<std::tuple<std::string, glm::vec3>>
+                    lights; // stores names and radiances
                 std::string name;
                 while (light != nullptr) {
                     const char *buf;
@@ -267,20 +247,25 @@ int main(int argc, char **argv) {
                     if (err != tinyxml2::XML_SUCCESS)
                         throw std::runtime_error("No mtlname");
                     name = buf;
-                    lht.radiance = getRadiance(light);
 
                     lights.emplace_back(
-                        std::make_tuple(mtlNames2mtl[name], lht));
+                        std::make_tuple(name, getRadiance(light)));
 
                     light = light->NextSiblingElement("light");
                 }
 
-                mesh->SetMtlAsLights(lights);
+                mesh->SetLights(lights);
             }
         } catch (std::exception &e) {
             std::cout << "[WARNING] Failed to read scene configuration: "
                       << e.what() << std::endl;
         }
+
+        auto scn = std::make_shared<RayTraceScn>();
+        scn->SetBackgroundColor({.1f, .2f, .25f});
+        scn->SetModel(mesh);
+        scn->BuildBVH();
+        renderer.SetScene(scn);
     }
 
     // Render Loop
@@ -291,7 +276,8 @@ int main(int argc, char **argv) {
         glfwPollEvents();
 
         renderer.Prepare();
-        renderer.Render();
+        auto lowResScale = renderer.Render();
+        glUniform1f(sqShdrLowResScalePos, lowResScale);
 
         glClear(GL_COLOR_BUFFER_BIT);
         glBindVertexArray(VAO);

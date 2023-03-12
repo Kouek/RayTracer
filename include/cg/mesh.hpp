@@ -2,21 +2,24 @@
 #define KOUEK_MESH_H
 
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 
+#include <algorithm>
 #include <array>
 #include <unordered_map>
 #include <vector>
 
-#include <glad/glad.h>
-#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace kouek {
 
 class Mesh {
   public:
+    static constexpr auto NoneIdx = std::numeric_limits<glm::uint>::max();
+
     struct Face2Idx3 {
         glm::uvec3 v;
         glm::uvec3 t;
@@ -24,17 +27,29 @@ class Mesh {
     };
 
     struct Light {
+        enum class Type { Quad, Sphere };
+        Type type;
+        float area;
         glm::vec3 radiance;
+        union {
+            struct {
+                glm::vec3 pos;
+                glm::vec3 uv[2];
+            } quad;
+            struct {
+                glm::vec3 pos;
+                float radius;
+            } sphere;
+        };
     };
 
     struct Material {
-        bool isLight;
+        glm::uint lightIdx;
         glm::vec3 kd;
         glm::vec3 ks;
         glm::vec3 tr;
         float ns;
         float ni;
-        Light light;
     };
 
   private:
@@ -44,11 +59,12 @@ class Mesh {
     std::vector<glm::vec2> vts;
     std::vector<glm::vec3> vns;
     std::vector<Material> mtls;
+    std::vector<Light> ls;
     std::vector<Face2Idx3> fs;
     std::vector<glm::uint> gs;
     std::vector<glm::uint> g2mtls;
 
-    std::unordered_map<glm::uint, std::string> grp2mtlNames;
+    std::unordered_map<glm::uint, std::string> g2mtlNames;
 
   public:
     inline const auto &GetMinMaxPos() const {
@@ -60,8 +76,9 @@ class Mesh {
     inline const auto &GetMtls() const { return mtls; }
     inline const auto &GetFS() const { return fs; }
     inline const auto &GetGS() const { return gs; }
+    inline const auto &GetLS() const { return ls; }
     inline const auto &GetG2Mtls() const { return g2mtls; }
-    inline const auto &GetGrp2MtlNames() const { return grp2mtlNames; }
+    inline const auto &GetG2MtlNames() const { return g2mtlNames; }
 
     void LoadFromFile(const std::string &objPath,
                       const std::string &mtlPath = "", bool swapXYZ = false) {
@@ -75,11 +92,84 @@ class Mesh {
     }
 
     void
-    SetMtlAsLights(const std::vector<std::tuple<glm::uint, Light>> &lights) {
-        for (auto &[mi, lht] : lights) {
-            mtls[mi].isLight = true;
-            mtls[mi].light = lht;
-        }
+    SetLights(const std::vector<std::tuple<std::string, glm::vec3>> &lights) {
+        ls.clear();
+        ls.reserve(lights.size());
+
+        auto addLight = [&](glm::uint gi, const glm::vec3 &radiance) {
+            mtls[g2mtls[gi]].lightIdx = ls.size();
+            ls.emplace_back();
+            auto &lht = ls.back();
+
+            lht.radiance = radiance;
+            if (gs[gi + 1] - gs[gi] == 2) {
+                lht.type == Light::Type::Quad;
+
+                auto vi3 = [&]() {
+                    std::array<glm::uint, 3> ret;
+                    auto &vi3 = fs[gs[gi]].v;
+                    std::array e3{vs[vi3[1]] - vs[vi3[0]],
+                                  vs[vi3[2]] - vs[vi3[1]],
+                                  vs[vi3[0]] - vs[vi3[2]]};
+
+                    if (glm::dot(e3[0], e3[1]) <
+                        std::numeric_limits<float>::epsilon()) {
+                        ret[0] = vi3[0];
+                        ret[1] = vi3[1];
+                        ret[2] = vi3[2];
+                    } else if (glm::dot(e3[1], e3[2]) <
+                               std::numeric_limits<float>::epsilon()) {
+                        ret[0] = vi3[1];
+                        ret[1] = vi3[2];
+                        ret[2] = vi3[0];
+                    } else if (glm::dot(e3[2], e3[0]) <
+                               std::numeric_limits<float>::epsilon()) {
+                        ret[0] = vi3[2];
+                        ret[1] = vi3[0];
+                        ret[2] = vi3[1];
+                    }
+                    return ret;
+                }();
+
+                lht.quad.pos = vs[vi3[1]];
+                lht.quad.uv[0] = vs[vi3[0]] - vs[vi3[1]];
+                lht.quad.uv[1] = vs[vi3[2]] - vs[vi3[1]];
+
+                lht.area =
+                    glm::length(glm::cross(lht.quad.uv[0], lht.quad.uv[1]));
+            } else {
+                lht.type == Light::Type::Quad;
+
+                lht.sphere.pos = glm::zero<glm::vec3>();
+                float divGrp = 1.f / (gs[gi + 1] - gs[gi]);
+                float divFace = 1.f / 3.f;
+                for (glm::uint fi = gs[gi]; fi < gs[gi + 1]; ++fi) {
+                    auto &vi3 = fs[fi].v;
+                    auto mid = divFace * (vs[vi3[0]] + vs[vi3[1]] + vs[vi3[2]]);
+                    lht.sphere.pos += divGrp * mid;
+                }
+
+                lht.sphere.radius = 0.f;
+                for (glm::uint fi = gs[gi]; fi < gs[gi + 1]; ++fi) {
+                    auto &vi3 = fs[fi].v;
+                    for (uint8_t i = 0; i < 3; ++i) {
+                        auto dist = glm::distance(vs[vi3[i]], lht.sphere.pos);
+                        if (lht.sphere.radius < dist)
+                            lht.sphere.radius = dist;
+                    }
+                }
+
+                lht.area =
+                    glm::pi<float>() * lht.sphere.radius * lht.sphere.radius;
+            }
+        };
+
+        for (const auto &[name, radiance] : lights)
+            for (const auto &[gi, _name] : g2mtlNames) {
+                if (_name != name)
+                    continue;
+                addLight(gi, radiance);
+            }
     }
 
     inline void Clear() {
@@ -92,14 +182,18 @@ class Mesh {
         vts.shrink_to_fit();
         vns.clear();
         vns.shrink_to_fit();
-        fs.clear();
-        fs.shrink_to_fit();
-
         mtls.clear();
         mtls.shrink_to_fit();
+        fs.clear();
+        fs.shrink_to_fit();
+        ls.clear();
+        ls.shrink_to_fit();
+        gs.clear();
+        gs.shrink_to_fit();
         g2mtls.clear();
         g2mtls.shrink_to_fit();
-        grp2mtlNames.clear();
+
+        g2mtlNames.clear();
     }
 
   private:
@@ -140,7 +234,7 @@ class Mesh {
                 sscanf(buf.c_str() + 3, "%f", &s);
             } else if (buf.substr(0, NewmtlLen) == Newmtl) {
                 mtls.emplace_back();
-                mtls.back().isLight = false;
+                mtls.back().lightIdx = NoneIdx;
                 mtlName2IDs.emplace(
                     std::piecewise_construct,
                     std::forward_as_tuple(buf.substr(NewmtlLen)),
@@ -241,13 +335,16 @@ class Mesh {
                 if (gs.empty())
                     gs.emplace_back(0);
                 glm::uint gi = gs.size() - 1;
-                grp2mtlNames.emplace(
-                    std::piecewise_construct, std::forward_as_tuple(gi),
-                    std::forward_as_tuple(buf.substr(UsemtlLen)));
-                auto itr = mtlName2IDs.find(grp2mtlNames[gi]);
+
+                auto name = buf.substr(UsemtlLen);
+                g2mtlNames.emplace(std::piecewise_construct,
+                                   std::forward_as_tuple(gi),
+                                   std::forward_as_tuple(name));
+
+                auto itr = mtlName2IDs.find(g2mtlNames[gi]);
                 if (itr == mtlName2IDs.end())
                     throw std::runtime_error(
-                        "No material named " + grp2mtlNames[gi] +
+                        "No material named " + g2mtlNames[gi] +
                         "exists for group " + std::to_string(gi) +
                         ". Load model failed.");
                 else {
@@ -267,8 +364,6 @@ class Mesh {
                 "Obj File has no vertices or faces. Load model failed.");
     }
 };
-
-class Model {};
 
 } // namespace kouek
 

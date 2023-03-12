@@ -31,7 +31,7 @@ template <typename T> struct Updatable {
         return val.*memPtr;
     }
 
-    void Update(const std::function<void(void)> &call) {
+    template <typename CallTy> void Update(CallTy &&call) {
         if (needUpdate) {
             call();
             needUpdate = false;
@@ -41,6 +41,7 @@ template <typename T> struct Updatable {
 
 struct RenderInfo {
     glm::uvec2 res;
+    glm::uvec2 lowRes;
     glm::uint maxDepth;
 };
 
@@ -123,6 +124,7 @@ struct BVHNode {
 
 struct SceneInfo {
     glm::uint faceNum;
+    glm::uint lightNum;
     glm::vec3 bkgrndCol;
     const BVHNode *bvh;
     const glm::uint *grp2faceBVHNodeIndices;
@@ -132,6 +134,7 @@ struct SceneInfo {
     const glm::vec2 *uvs;
     const glm::vec3 *normals;
     const Mesh::Material *mtls;
+    const Mesh::Light *lights;
     const Mesh::Face2Idx3 *faces;
 };
 

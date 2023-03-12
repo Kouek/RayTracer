@@ -56,6 +56,11 @@ target_include_directories(
     INTERFACE
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/src>
 )
+set_target_properties(
+	${TARGET_NAME}
+	PROPERTIES CUDA_SEPARABLE_COMPILATION ON
+	CUDA_RESOLVE_DEVICE_SYMBOLS ON
+)
 # </ray_tracer>
 # </lib>
 

@@ -26,15 +26,18 @@ class RayTraceScn {
 
     std::shared_ptr<Mesh> mesh;
 
-    thrust::device_vector<glm::vec3> d_positions;
-    thrust::device_vector<glm::vec2> d_uvs;
-    thrust::device_vector<glm::vec3> d_normals;
-    thrust::device_vector<Mesh::Material> d_mtls;
-    thrust::device_vector<Mesh::Face2Idx3> d_faces;
-    thrust::device_vector<glm::uint> d_groups;
-    thrust::device_vector<glm::uint> d_grp2mtls;
+    thrust::device_vector<glm::vec3> d_positions; // idx.v -> pos
+    thrust::device_vector<glm::vec2> d_uvs;       // idx.uv -> uv
+    thrust::device_vector<glm::vec3> d_normals;   // idx.n -> n
+    thrust::device_vector<Mesh::Material> d_mtls; // mi -> mtl
+    thrust::device_vector<Mesh::Light> d_lights;  // li -> light
+    thrust::device_vector<Mesh::Face2Idx3>
+        d_faces; // bvhLeafIdx of faces -> 3 vertex-info-indices of 1 face
+    thrust::device_vector<glm::uint> d_groups;   // bvhLeafIdx of groups -> gi
+    thrust::device_vector<glm::uint> d_grp2mtls; // gi -> mi
 
-    thrust::device_vector<glm::uint> d_grp2faceBVHNodeIndices;
+    thrust::device_vector<glm::uint>
+        d_grp2faceBVHNodeIndices; // gi -> bvhLeafID of faces
     thrust::device_vector<BVHNode> d_bvh;
 
   public:

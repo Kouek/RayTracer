@@ -41,7 +41,8 @@ void kouek::RayTracer::Release() {
     }
 }
 
-void kouek::RayTracer::SetOutput(GLuint tex, const glm::uvec2 &res) {
+void kouek::RayTracer::SetOutput(GLuint tex, const glm::uvec2 &res,
+                                 uint8_t lowResLOD) {
     memset(&outputDesc, 0, sizeof(outputDesc));
     outputDesc.resType = cudaResourceTypeArray;
     CHECK_CUDA(
@@ -49,24 +50,46 @@ void kouek::RayTracer::SetOutput(GLuint tex, const glm::uvec2 &res) {
                                     cudaGraphicsRegisterFlagsWriteDiscard));
 
     rndrInfo[&RenderInfo::res] = res;
+    lowResScale = 1.f / (float)(1 << lowResLOD);
+    rndrInfo[&RenderInfo::lowRes] = glm::vec2{res} * lowResScale;
+}
+
+void kouek::RayTracer::SetMaxDepth(glm::uint maxDepth) {
+    rndrInfo[&RenderInfo::maxDepth] = maxDepth;
 }
 
 void kouek::RayTracer::Prepare() {
     rndrInfo.Update([&]() { uploadRenderInfo(rndrInfo.val); });
     scn.Update([&]() { uploadSceneInfo(scn()->GetScnInfo()); });
     proj.Update([&]() { uploadProjection(proj.val); });
-    cam.Update([&]() { uploadCamera(cam.val); });
+    
+    auto lastRndrLowRes = rndrLowRes;
+    rndrLowRes = false;
+    cam.Update([&]() {
+        uploadCamera(cam.val);
+        rndrLowRes = true;
+    });
+
+    reAccumulate = false;
+    if (rndrLowRes != lastRndrLowRes)
+        reAccumulate = true;
+
 }
 
-void kouek::RayTracer::Render() {
+float kouek::RayTracer::Render() {
     cudaGraphicsMapResources(1, &outputResc);
     cudaGraphicsSubResourceGetMappedArray(&outputDesc.res.array.array,
                                           outputResc, 0, 0);
     cudaSurfaceObject_t outputSurf;
     cudaCreateSurfaceObject(&outputSurf, &outputDesc);
 
-    render(outputSurf, rndrInfo(&RenderInfo::res));
+    render(outputSurf,
+           rndrLowRes ? rndrInfo(&RenderInfo::lowRes)
+                      : rndrInfo(&RenderInfo::res),
+           rndrLowRes, reAccumulate);
 
     cudaDestroySurfaceObject(outputSurf);
     cudaGraphicsUnmapResources(1, &outputResc);
+
+    return rndrLowRes ? lowResScale : 1.f;
 }
