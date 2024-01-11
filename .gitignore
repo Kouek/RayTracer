@@ -1,0 +1,7 @@
+# CMake
+out/
+include/cmake_in.h
+
+# VS
+CMakeSettings.json
+.vs/
