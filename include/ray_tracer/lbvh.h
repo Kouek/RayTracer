@@ -37,14 +37,14 @@ class LBVH : Noncopyable {
     };
 
   private:
+    bool isComplete = false;
+
     AABB rootAABB;
 
     thrust::device_vector<IndexTy> d_faces;
     thrust::device_vector<IndexTy> d_compactedFaces;
     thrust::device_vector<AABB> d_aabbs;
     thrust::device_vector<InternalNode> d_internalNodes;
-
-    std::string errMsg;
 
   public:
     struct InputMesh {
@@ -53,12 +53,11 @@ class LBVH : Noncopyable {
     };
     void BuildFrom(const InputMesh &mesh);
 
-    bool IsBuilded() const { return errMsg.empty(); }
+    bool IsComplete() const { return isComplete; }
 
 #define CONST_REF_GETTER(member, memberNameInFunc)                                                 \
     const decltype(member) &Get##memberNameInFunc() const { return member; }
     CONST_REF_GETTER(rootAABB, RootAABB)
-    CONST_REF_GETTER(errMsg, ErrorMessage)
 #undef CONST_REF_GETTER
 };
 

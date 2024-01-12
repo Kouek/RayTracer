@@ -195,10 +195,8 @@ template <typename VoxelType> int run(const cli::Parser &parser) {
         kouek::Data::RAWVolume<VoxelType> vol(volPath, dim, trAxis);
         return vol;
     }();
-    if (!vol.IsComplete()) {
-        std::cerr << vol.GetErrorMessage();
+    if (!vol.IsComplete())
         return 1;
-    }
 
     auto trDim = vol.GetDimension();
     auto spaces = [&]() {
@@ -216,10 +214,8 @@ template <typename VoxelType> int run(const cli::Parser &parser) {
             tfPath);
         return tf;
     }();
-    if (!tf.IsComplete()) {
-        std::cerr << tf.GetErrorMessage();
+    if (!tf.IsComplete())
         return 1;
-    }
 
     std::shared_ptr<kouek::CUDA::Array> volArr;
     std::shared_ptr<kouek::CUDA::Texture> volTex;
@@ -289,10 +285,8 @@ template <typename VoxelType> int run(const cli::Parser &parser) {
                                    .useDepthBox = useDepthBox,
                                    .volTex = *volTexPointFilter,
                                    .emptyScalarRngs = tf.GetEmptyScalarRanges()});
-        if (!vdb->IsComplete()) {
-            std::cerr << vdb->GetErrorMessage();
+        if (!vdb->IsComplete())
             return false;
-        }
         vdbRootLev = vdb->GetDeviceData().vdbParam.rootLev;
 
         rayCaster.SetDepthBoxVDB(vdb);

@@ -92,6 +92,8 @@ class DepthBoxVDB : Noncopyable {
     };
 
   private:
+    bool isComplete = false;
+
     thrust::device_vector<Node> d_nodePools;
     thrust::device_vector<RelativeIndexTy> d_childPools;
     thrust::device_vector<RelativeIndexTy> d_atlasBrickToNodeIndices;
@@ -100,8 +102,6 @@ class DepthBoxVDB : Noncopyable {
     std::unique_ptr<kouek::CUDA::Surface> atlasSurf;
     std::unique_ptr<kouek::CUDA::Texture> atlasTex;
     std::unique_ptr<kouek::CUDA::Texture> atlasDepTex;
-
-    std::string errMsg;
 
     static constexpr std::string_view ErrTag = "[DepthBoxVDB Error]";
 
@@ -123,7 +123,7 @@ class DepthBoxVDB : Noncopyable {
     };
     template <typename T> void BuildFrom(const InputVolumeAndConfiguration<T> &inputVolAndCfg);
 
-    bool IsComplete() const { return errMsg.empty(); }
+    bool IsComplete() const { return isComplete; }
 
     const DeviceData *GetDeivceDataDevicePtr() const { return d_deviceDatPtr; }
 
@@ -134,7 +134,6 @@ class DepthBoxVDB : Noncopyable {
 #define CONST_REF_GETTER(member, memberNameInFunc)                                                 \
     const decltype(member) &Get##memberNameInFunc() const { return member; }
     CONST_REF_GETTER(deviceDat, DeviceData)
-    CONST_REF_GETTER(errMsg, ErrorMessage)
 #undef CONST_REF_GETTER
 
   private:

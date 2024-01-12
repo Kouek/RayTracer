@@ -87,6 +87,8 @@ __host_dev__ void computeLBVHLinks(InodesTy &inodes, const uint32_t *mortons,
 }
 
 void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
+    isComplete = false;
+
     thrust::device_vector<glm::vec3> d_positions(mesh.positions);
     thrust::device_vector<glm::vec<3, IndexTy>> d_facePositionIndices(mesh.facePositionIndices);
     d_faces.resize(d_facePositionIndices.size());
@@ -281,4 +283,6 @@ void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
                                  rootAABB.maxPos.y, rootAABB.maxPos.z);
 #endif // TEST_computeAABBs
     }
+
+    isComplete = true;
 }

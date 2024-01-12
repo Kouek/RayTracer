@@ -1,6 +1,7 @@
 #include <ray_caster/dpbx_vdb.h>
 #include <ray_caster/test_options.h>
 
+#include <iostream>
 #include <numeric>
 
 #include <array>
@@ -15,8 +16,8 @@
 
 #define ASSERT(cond)                                                                               \
     if (!(cond)) {                                                                                 \
-        errMsg =                                                                                   \
-            std::format("{} at {}:{}. {} should be true.\n", ErrTag, __FILE__, __LINE__, #cond);   \
+        std::cerr << std::format("{} at {}:{}. {} should be true.\n", ErrTag, __FILE__, __LINE__,  \
+                                 #cond);                                                           \
         return;                                                                                    \
     }
 
@@ -276,6 +277,8 @@ void updateAtlas(std::shared_ptr<kouek::CUDA::Array> &atlasArr,
 template <typename T>
 void kouek::RayCaster::DepthBoxVDB::BuildFrom(
     const InputVolumeAndConfiguration<T> &inputVolAndCfg) {
+    isComplete = false;
+
     clear();
 
     for (auto log2Dim : inputVolAndCfg.log2Dims)
@@ -323,7 +326,7 @@ void kouek::RayCaster::DepthBoxVDB::BuildFrom(
             }
 
             if (lev == MaxLevelNum) {
-                errMsg = std::format(
+                std::cerr << std::format(
                     "{} at {}:{}. Current VDB configuration cannot cover {}x{}x{} voxels.\n",
                     ErrTag, __FILE__, __LINE__, voxPerVol.width, voxPerVol.height, voxPerVol.depth);
                 return;
@@ -604,6 +607,8 @@ void kouek::RayCaster::DepthBoxVDB::BuildFrom(
                vdbParam.atlasBrickPerVDB.y * vdbParam.voxPerAtlasBrick *
                vdbParam.atlasBrickPerVDB.z * vdbParam.voxPerAtlasBrick;
     std::cout << std::format("\tTotal use of memory {}\n", memUsed);
+
+    isComplete = true;
 }
 
 template void

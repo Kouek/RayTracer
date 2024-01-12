@@ -2,6 +2,7 @@
 #define KOUEK_RAW_VOLUME_H
 
 #include <fstream>
+#include <iostream>
 #include <source_location>
 #include <string_view>
 
@@ -15,10 +16,11 @@ namespace Data {
 
 template <typename T> class RAWVolume {
   private:
+    bool isComplete = false;
+
     glm::vec<3, uint32_t> dim;
     std::vector<T> dat;
 
-    std::string errMsg;
     static constexpr std::string_view ErrTag = "[RAWVolume Error]";
 
   public:
@@ -30,6 +32,8 @@ template <typename T> class RAWVolume {
 
     void LoadFromFile(const std::string &path, const glm::vec<3, uint32_t> &dim,
                       const glm::i8vec3 &trAxis = {1, 2, 3}) {
+        isComplete = false;
+
         auto voxNum = static_cast<size_t>(dim.x) * dim.y * dim.z;
         auto volSz = sizeof(T) * voxNum;
 
@@ -51,22 +55,22 @@ template <typename T> class RAWVolume {
                 }();
             !check) {
             auto srcLoc = std::source_location::current();
-            errMsg = std::format("{} at {}:{}. Parameter trAxis is invalid.\n", ErrTag,
-                                 srcLoc.file_name(), srcLoc.line());
+            std::cerr << std::format("{} at {}:{}. Parameter trAxis is invalid.\n", ErrTag,
+                                     srcLoc.file_name(), srcLoc.line());
             return;
         }
 
         std::ifstream is(path, std::ios::in | std::ios::binary | std::ios::ate);
         if (!is.is_open()) {
             auto srcLoc = std::source_location::current();
-            errMsg = std::format("{} at {}:{}. Cannot open file at \"{}\".\n", ErrTag,
-                                 srcLoc.file_name(), srcLoc.line(), path);
+            std::cerr << std::format("{} at {}:{}. Cannot open file at \"{}\".\n", ErrTag,
+                                     srcLoc.file_name(), srcLoc.line(), path);
             return;
         }
 
         if (is.tellg() < volSz) {
             auto srcLoc = std::source_location::current();
-            errMsg = std::format(
+            std::cerr << std::format(
                 "{} at {}:{}. File {} is too small to contain volume of size ({},{},{})\n", ErrTag,
                 srcLoc.file_name(), srcLoc.line(), path, dim.x, dim.y, dim.z);
             goto TERMINAL;
@@ -102,17 +106,18 @@ template <typename T> class RAWVolume {
                     }
         }
 
+        isComplete = true;
+
     TERMINAL:
         is.close();
     }
 
-    bool IsComplete() const { return errMsg.empty(); }
+    bool IsComplete() const { return isComplete; }
 
 #define CONST_REF_GETTER(member, memberNameInFunc)                                                 \
     const decltype(member) &Get##memberNameInFunc() const { return member; }
     CONST_REF_GETTER(dat, );
     CONST_REF_GETTER(dim, Dimension);
-    CONST_REF_GETTER(errMsg, ErrorMessage);
 #undef CONST_REF_GETTER
 };
 

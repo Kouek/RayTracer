@@ -4,6 +4,7 @@
 #include <format>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <source_location>
 #include <string>
 #include <string_view>
@@ -23,6 +24,8 @@ class OBJMesh {
     using IndexTy = uint32_t;
 
   private:
+    bool isComplete = false;
+
     std::vector<glm::vec3> positions;
     std::vector<glm::vec3> normals;
     std::vector<glm::vec2> texCoords;
@@ -35,7 +38,6 @@ class OBJMesh {
     std::string objPath;
     std::string mtllibPath;
 
-    std::string errMsg;
     static constexpr std::string_view ErrTag = "[OBJMesh Error]";
 
     enum class Tag : uint8_t {
@@ -55,13 +57,13 @@ class OBJMesh {
     OBJMesh(const std::string &path) { LoadFromFile(path); }
 
     void LoadFromFile(const std::string &path) {
-        errMsg.clear();
+        isComplete = false;
 
         std::ifstream in(path, std::ios::in);
         if (!in.is_open()) {
             auto srcLoc = std::source_location::current();
-            errMsg = std::format("{} at {}:{}. Cannot open file at \"{}\".\n", ErrTag,
-                                 srcLoc.file_name(), srcLoc.line(), path);
+            std::cerr << std::format("{} at {}:{}. Cannot open file at \"{}\".\n", ErrTag,
+                                     srcLoc.file_name(), srcLoc.line(), path);
             return;
         }
 
@@ -69,8 +71,8 @@ class OBJMesh {
 
         uint32_t ln = 0;
         auto processParseErr = [&](std::source_location srcLoc = std::source_location::current()) {
-            errMsg = std::format("{} at {}:{}. Failed parsing line {}.\n", ErrTag,
-                                 srcLoc.file_name(), srcLoc.line(), ln);
+            std::cerr << std::format("{} at {}:{}. Failed parsing line {}.\n", ErrTag,
+                                     srcLoc.file_name(), srcLoc.line(), ln);
             positions.clear();
             normals.clear();
             texCoords.clear();
@@ -154,9 +156,11 @@ class OBJMesh {
                 break;
             }
         }
+
+        isComplete = true;
     }
 
-    bool IsComplete() const { return errMsg.empty(); }
+    bool IsComplete() const { return isComplete; }
 
 #define CONST_REF_GETTER(member, memberNameInFunc)                                                 \
     const decltype(member) &Get##memberNameInFunc() const { return member; }
@@ -168,7 +172,6 @@ class OBJMesh {
     CONST_REF_GETTER(faceTexCoordIndices, FaceTextureCoordinateIndices)
     CONST_REF_GETTER(faceNormalIndices, FaceNormalIndices)
     CONST_REF_GETTER(grp2mtls, GroupToMaterials)
-    CONST_REF_GETTER(errMsg, ErrorMessage);
     CONST_REF_GETTER(objPath, OBJPath)
     CONST_REF_GETTER(mtllibPath, MaterialLibraryPath)
 #undef CONST_REF_GETTER

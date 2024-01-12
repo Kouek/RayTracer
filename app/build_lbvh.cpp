@@ -19,10 +19,8 @@ int main(int argc, char **argv) {
 
     auto mesh = kouek::Data::OBJMesh();
     mesh.LoadFromFile(cmdParser.get<std::string>("obj"));
-    if (!mesh.IsComplete()) {
-        std::cerr << mesh.GetErrorMessage();
+    if (!mesh.IsComplete())
         return 1;
-    }
     std::cout << std::format("Load mesh with {} vertices, {} faces.\n", mesh.GetPositions().size(),
                              mesh.GetFacePositionIndices().size());
 
