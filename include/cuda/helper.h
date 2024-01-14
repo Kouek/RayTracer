@@ -20,15 +20,17 @@ inline cudaError_t Check(cudaError_t err, const char *fileName, uint32_t line) {
 }
 
 #ifdef NDEBUG
-#define CHECK_CUDA(call) call
+#define KOUEK_CUDA_CHECK(call) call
 #else
-#define CHECK_CUDA(call) Check(call, __FILE__, __LINE__)
+#define KOUEK_CUDA_CHECK(call) Check(call, __FILE__, __LINE__)
 #endif // NDEBUG
 
 #ifdef __CUDACC__
-#define __host_dev__ __host__ __device__
+#define KOUEK_CUDA_HOST_DEV __host__ __device__
+#define KOUEK_CUDA_ALIGN __align__(16)
 #else
-#define __host_dev__
+#define KOUEK_CUDA_HOST_DEV
+#define KOUEK_CUDA_ALIGN alignas(16)
 #endif // __CUDACC__
 
 constexpr auto FloatMin = std::numeric_limits<float>::lowest();

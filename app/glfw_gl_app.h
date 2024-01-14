@@ -151,7 +151,7 @@ struct GLFWxGLxCUDAApp {
     ~GLFWxGLxCUDAApp() {
         if (cudaGLRes != nullptr) {
             using namespace kouek::CUDA;
-            CHECK_CUDA(cudaGraphicsUnregisterResource(cudaGLRes));
+            KOUEK_CUDA_CHECK(cudaGraphicsUnregisterResource(cudaGLRes));
             cudaGLRes = nullptr;
         }
         if (offScrnFBO != 0) {
@@ -187,18 +187,18 @@ struct GLFWxGLxCUDAApp {
         using namespace kouek::CUDA;
 
         cudaSurfaceObject_t cudaSurf;
-        CHECK_CUDA(cudaGraphicsMapResources(1, &cudaGLRes));
-        CHECK_CUDA(
+        KOUEK_CUDA_CHECK(cudaGraphicsMapResources(1, &cudaGLRes));
+        KOUEK_CUDA_CHECK(
             cudaGraphicsSubResourceGetMappedArray(&cudaGLResDesc.res.array.array, cudaGLRes, 0, 0));
-        CHECK_CUDA(cudaCreateSurfaceObject(&cudaSurf, &cudaGLResDesc));
+        KOUEK_CUDA_CHECK(cudaCreateSurfaceObject(&cudaSurf, &cudaGLResDesc));
         return cudaSurf;
     }
 
     void UnmapGLResourceFromCUDA(cudaSurfaceObject_t cudaSurf) {
         using namespace kouek::CUDA;
 
-        CHECK_CUDA(cudaDestroySurfaceObject(cudaSurf));
-        CHECK_CUDA(cudaGraphicsUnmapResources(1, &cudaGLRes));
+        KOUEK_CUDA_CHECK(cudaDestroySurfaceObject(cudaSurf));
+        KOUEK_CUDA_CHECK(cudaGraphicsUnmapResources(1, &cudaGLRes));
     }
 
   private:
@@ -206,7 +206,7 @@ struct GLFWxGLxCUDAApp {
         using namespace kouek::CUDA;
         if (cudaGLRes) {
             // Unbind if is binded
-            CHECK_CUDA(cudaGraphicsUnregisterResource(cudaGLRes));
+            KOUEK_CUDA_CHECK(cudaGraphicsUnregisterResource(cudaGLRes));
             cudaGLRes = nullptr;
         }
 
@@ -246,8 +246,8 @@ struct GLFWxGLxCUDAApp {
         memset(&cudaGLResDesc, 0, sizeof(cudaGLResDesc));
         cudaGLResDesc.resType = cudaResourceTypeArray;
         ok &= cudaSuccess ==
-              CHECK_CUDA(cudaGraphicsGLRegisterImage(&cudaGLRes, colAtch, GL_TEXTURE_2D,
-                                                     cudaGraphicsRegisterFlagsWriteDiscard));
+              KOUEK_CUDA_CHECK(cudaGraphicsGLRegisterImage(&cudaGLRes, colAtch, GL_TEXTURE_2D,
+                                                           cudaGraphicsRegisterFlagsWriteDiscard));
 
         callerOnResized(rndrSz);
     }

@@ -16,10 +16,10 @@ void kouek::RayCaster::RayCaster::SetRAWVolume(std::shared_ptr<CUDA::Texture> vo
     this->volTex = volTex;
 
     cudaResourceDesc resDesc;
-    CHECK_CUDA(cudaGetTextureObjectResourceDesc(&resDesc, this->volTex->Get()));
+    KOUEK_CUDA_CHECK(cudaGetTextureObjectResourceDesc(&resDesc, this->volTex->Get()));
     cudaChannelFormatDesc chnDesc;
     cudaExtent extent;
-    CHECK_CUDA(cudaArrayGetInfo(&chnDesc, &extent, nullptr, resDesc.res.array.array));
+    KOUEK_CUDA_CHECK(cudaArrayGetInfo(&chnDesc, &extent, nullptr, resDesc.res.array.array));
 
     rawVolRndrParam.Set(&RAWVolumeRenderParameter::dim,
                         {extent.width, extent.height, extent.depth});
@@ -157,12 +157,12 @@ void kouek::RayCaster::RayCaster::RenderRAWVolume(cudaSurfaceObject_t rndrTo,
         using namespace kouek::CUDA;
         if (modifiable.modified) {
             if (!(*d_datPtrPtr))
-                CHECK_CUDA(cudaMalloc(d_datPtrPtr, sizeof(**d_datPtrPtr)));
+                KOUEK_CUDA_CHECK(cudaMalloc(d_datPtrPtr, sizeof(**d_datPtrPtr)));
 
             auto &dat = modifiable.GetAndReset();
-            CHECK_CUDA(cudaMemcpy(*d_datPtrPtr, &dat,
-                                  sizeof(std::remove_reference_t<decltype(dat)>),
-                                  cudaMemcpyHostToDevice));
+            KOUEK_CUDA_CHECK(cudaMemcpy(*d_datPtrPtr, &dat,
+                                        sizeof(std::remove_reference_t<decltype(dat)>),
+                                        cudaMemcpyHostToDevice));
         }
     };
     uploadInNeed(rndrParam, &d_rndrParamPtr);

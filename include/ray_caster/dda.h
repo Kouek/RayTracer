@@ -10,29 +10,29 @@ namespace RayCaster {
 
 constexpr auto Eps = .01f;
 
-struct VDBStack {
+struct KOUEK_CUDA_ALIGN VDBStack {
     int8_t lev;
     float tExits[DepthBoxVDB::MaxLevelNum - 1];
     DepthBoxVDB::Node nodes[DepthBoxVDB::MaxLevelNum - 1];
     const DepthBoxVDB::DeviceData &vdb;
 
-    __host_dev__ static VDBStack Create(const DepthBoxVDB::DeviceData &vdb) {
+    KOUEK_CUDA_HOST_DEV static VDBStack Create(const DepthBoxVDB::DeviceData &vdb) {
         VDBStack stk = {.lev = vdb.vdbParam.rootLev + 1, .vdb = vdb};
         return stk;
     }
-    __host_dev__ void Push(DepthBoxVDB::RelativeIndexTy nodeIdxRelative, float tExit) {
+    KOUEK_CUDA_HOST_DEV void Push(DepthBoxVDB::RelativeIndexTy nodeIdxRelative, float tExit) {
         --lev;
         nodes[lev - 1] = vdb.GetNode(lev, nodeIdxRelative);
         tExits[lev - 1] = tExit;
     }
-    __host_dev__ DepthBoxVDB::Node &TopNode() { return nodes[lev - 1]; }
-    __host_dev__ float TopTExit() { return tExits[lev - 1]; }
-    __host_dev__ void Pop() { ++lev; }
-    __host_dev__ bool Empty() { return lev == vdb.vdbParam.rootLev + 1; }
-    __host_dev__ bool Full() { return lev == 0; }
+    KOUEK_CUDA_HOST_DEV DepthBoxVDB::Node &TopNode() { return nodes[lev - 1]; }
+    KOUEK_CUDA_HOST_DEV float TopTExit() { return tExits[lev - 1]; }
+    KOUEK_CUDA_HOST_DEV void Pop() { ++lev; }
+    KOUEK_CUDA_HOST_DEV bool Empty() { return lev == vdb.vdbParam.rootLev + 1; }
+    KOUEK_CUDA_HOST_DEV bool Full() { return lev == 0; }
 };
 
-struct HDDA3D {
+struct KOUEK_CUDA_ALIGN HDDA3D {
     glm::vec<3, int32_t> sign;  // signs of ray dir
     glm::vec<3, int32_t> mask;  // 0 for should NOT and 1 for should move on XYZ axis
     glm::vec<3, int32_t> chPos; // pos of child relative to its parent node
@@ -42,7 +42,7 @@ struct HDDA3D {
     const glm::vec3 &pos; // ray pos in VDB Space
     const glm::vec3 &dir; // ray dir in VDB Spacek
 
-    __host_dev__ static HDDA3D Create(float tCurr, const kouek::Ray &ray) {
+    KOUEK_CUDA_HOST_DEV static HDDA3D Create(float tCurr, const kouek::Ray &ray) {
         HDDA3D hdda3d = {.pos = ray.pos, .dir = ray.dir};
         hdda3d.sign = {hdda3d.dir.x > 0.f   ? 1
                        : hdda3d.dir.x < 0.f ? -1
@@ -58,21 +58,21 @@ struct HDDA3D {
         return hdda3d;
     }
 
-    __host_dev__ void Prepare(const glm::vec3 &min, float voxPerChild) {
+    KOUEK_CUDA_HOST_DEV void Prepare(const glm::vec3 &min, float voxPerChild) {
         tDlt = glm::abs(voxPerChild / dir);
         auto pFlt = (pos + tCurr * dir - min) / voxPerChild;
         tSide = ((glm::floor(pFlt) - pFlt + .5f) * glm::vec3{sign} + .5f) * tDlt + tCurr;
         chPos = glm::floor(pFlt);
     }
 
-    __host_dev__ void Next() {
+    KOUEK_CUDA_HOST_DEV void Next() {
         mask.x = static_cast<int32_t>((tSide.x < tSide.y) & (tSide.x <= tSide.z));
         mask.y = static_cast<int32_t>((tSide.y < tSide.z) & (tSide.y <= tSide.x));
         mask.z = static_cast<int32_t>((tSide.z < tSide.x) & (tSide.z <= tSide.y));
         tNext = mask.x ? tSide.x : mask.y ? tSide.y : mask.z ? tSide.z : INFINITY;
     }
 
-    __host_dev__ void Step() {
+    KOUEK_CUDA_HOST_DEV void Step() {
         tCurr = tNext;
         tSide.x = isinf(tDlt.x) ? INFINITY : mask.x ? tSide.x + tDlt.x : tSide.x;
         tSide.y = isinf(tDlt.y) ? INFINITY : mask.y ? tSide.y + tDlt.y : tSide.y;
@@ -81,7 +81,7 @@ struct HDDA3D {
     }
 };
 
-struct DepthDDA2D {
+struct KOUEK_CUDA_ALIGN DepthDDA2D {
     glm::vec<3, int32_t> sign;
     glm::vec<3, int32_t> mask;
     glm::vec<3, int32_t> posInBrick;
@@ -91,9 +91,9 @@ struct DepthDDA2D {
     glm::vec3 tSide;
     glm::vec3 tDlt;
 
-    __host_dev__ bool Init(float t, float maxPosValInBrick, int32_t minDepPosValInBrick,
-                           int32_t maxDepPosValInBrick, const glm::vec3 &posInBrick,
-                           const kouek::Ray &ray) {
+    KOUEK_CUDA_HOST_DEV bool Init(float t, float maxPosValInBrick, int32_t minDepPosValInBrick,
+                                  int32_t maxDepPosValInBrick, const glm::vec3 &posInBrick,
+                                  const kouek::Ray &ray) {
         dep = 0.f;
         this->posInBrick = glm::floor(posInBrick);
         sign = {ray.dir.x > 0.f   ? 1
@@ -156,7 +156,7 @@ struct DepthDDA2D {
         return (depSign.x | depSign.y | depSign.z);
     }
 
-    __host_dev__ void StepNext() {
+    KOUEK_CUDA_HOST_DEV void StepNext() {
         mask.x = static_cast<int32_t>((tSide.x < tSide.y) & (tSide.x <= tSide.z));
         mask.y = static_cast<int32_t>((tSide.y < tSide.z) & (tSide.y <= tSide.x));
         mask.z = static_cast<int32_t>((tSide.z < tSide.x) & (tSide.z <= tSide.y));

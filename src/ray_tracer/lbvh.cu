@@ -15,9 +15,9 @@
 #include <cuda/helper.h>
 
 template <typename InodesTy, typename LftCommZeroLenFuncTy>
-__host_dev__ void computeLBVHLinks(InodesTy &inodes, const uint32_t *mortons,
-                                   LftCommZeroLenFuncTy outerLftCommZeroLen, int64_t inodeNum,
-                                   int64_t inodeIdx) {
+KOUEK_CUDA_HOST_DEV void computeLBVHLinks(InodesTy &inodes, const uint32_t *mortons,
+                                          LftCommZeroLenFuncTy outerLftCommZeroLen,
+                                          int64_t inodeNum, int64_t inodeIdx) {
     using InternalNode = kouek::RayTracer::LBVH::InternalNode;
 
     auto lftCommZeroLen = [&](int64_t fi0, int64_t fi1) -> int {
@@ -97,12 +97,12 @@ void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
     {
         auto minPos = thrust::reduce(
             d_positions.begin(), d_positions.end(), glm::vec3(std::numeric_limits<float>::max()),
-            [] __host_dev__(const glm::vec3 &a, const glm::vec3 &b) {
+            [] KOUEK_CUDA_HOST_DEV(const glm::vec3 &a, const glm::vec3 &b) {
                 return glm::vec3{glm::min(a.x, b.x), glm::min(a.y, b.y), glm::min(a.z, b.z)};
             });
         auto maxPos = thrust::reduce(
             d_positions.begin(), d_positions.end(), glm::vec3(std::numeric_limits<float>::lowest()),
-            [] __host_dev__(const glm::vec3 &a, const glm::vec3 &b) {
+            [] KOUEK_CUDA_HOST_DEV(const glm::vec3 &a, const glm::vec3 &b) {
                 return glm::vec3{glm::max(a.x, b.x), glm::max(a.y, b.y), glm::max(a.z, b.z)};
             });
         rootAABB.Init(minPos, maxPos);
@@ -185,8 +185,8 @@ void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
         d_mortons = std::move(d_newMortons);
     }
 
-    auto lftCommZeroLen = [] __host_dev__(const uint32_t *mortons, int64_t cmpctIdx0,
-                                          int64_t cmpctIdx1, int64_t inodeNum) {
+    auto lftCommZeroLen = [] KOUEK_CUDA_HOST_DEV(const uint32_t *mortons, int64_t cmpctIdx0,
+                                                 int64_t cmpctIdx1, int64_t inodeNum) {
         if (cmpctIdx0 < 0 || cmpctIdx0 > inodeNum || cmpctIdx1 < 0 || cmpctIdx1 > inodeNum)
             return -1;
 

@@ -24,21 +24,11 @@ template <typename T> class RAWVolume {
     static constexpr std::string_view ErrTag = "[RAWVolume Error]";
 
   public:
-    RAWVolume() = default;
     RAWVolume(const std::string &path, const glm::vec<3, uint32_t> &dim,
               const glm::u8vec3 &trAxis = {1, 2, 3}) {
-        LoadFromFile(path, dim, trAxis);
-    }
-
-    void LoadFromFile(const std::string &path, const glm::vec<3, uint32_t> &dim,
-                      const glm::i8vec3 &trAxis = {1, 2, 3}) {
-        isComplete = false;
-
         auto voxNum = static_cast<size_t>(dim.x) * dim.y * dim.z;
         auto volSz = sizeof(T) * voxNum;
 
-        dat.clear();
-        dat.shrink_to_fit();
         dat.resize(voxNum);
 
         if (auto check =

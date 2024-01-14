@@ -23,9 +23,10 @@ class Array : Noncopyable {
     Array(const cudaChannelFormatDesc &chnDesc, const glm::vec<3, size_t> &dim) {
         if (dim.z != 0) {
             auto extent = make_cudaExtent(dim.x, dim.y, dim.z);
-            isComplete = cudaSuccess == CHECK_CUDA(cudaMalloc3DArray(&arr, &chnDesc, extent));
+            isComplete = cudaSuccess == KOUEK_CUDA_CHECK(cudaMalloc3DArray(&arr, &chnDesc, extent));
         } else
-            isComplete = cudaSuccess == CHECK_CUDA(cudaMallocArray(&arr, &chnDesc, dim.x, dim.y));
+            isComplete =
+                cudaSuccess == KOUEK_CUDA_CHECK(cudaMallocArray(&arr, &chnDesc, dim.x, dim.y));
     }
     template <typename T>
     Array(const std::vector<T> &dat, const glm::vec<3, size_t> &dim,
@@ -33,7 +34,7 @@ class Array : Noncopyable {
         auto chnDesc = chnDescOpt.value_or(cudaCreateChannelDesc<T>());
         if (dim.z != 0) {
             auto extent = make_cudaExtent(dim.x, dim.y, dim.z);
-            isComplete = cudaSuccess == CHECK_CUDA(cudaMalloc3DArray(&arr, &chnDesc, extent));
+            isComplete = cudaSuccess == KOUEK_CUDA_CHECK(cudaMalloc3DArray(&arr, &chnDesc, extent));
             if (!isComplete)
                 return;
 
@@ -44,21 +45,22 @@ class Array : Noncopyable {
             param.extent = extent;
             param.dstArray = arr;
             param.kind = cudaMemcpyHostToDevice;
-            isComplete &= cudaSuccess == CHECK_CUDA(cudaMemcpy3D(&param));
+            isComplete &= cudaSuccess == KOUEK_CUDA_CHECK(cudaMemcpy3D(&param));
         } else {
-            isComplete = cudaSuccess == CHECK_CUDA(cudaMallocArray(&arr, &chnDesc, dim.x, dim.y));
+            isComplete =
+                cudaSuccess == KOUEK_CUDA_CHECK(cudaMallocArray(&arr, &chnDesc, dim.x, dim.y));
             if (!isComplete)
                 return;
 
             isComplete &= cudaSuccess ==
-                          CHECK_CUDA(cudaMemcpyToArray(
+                          KOUEK_CUDA_CHECK(cudaMemcpyToArray(
                               arr, 0, 0, dat.data(), sizeof(T) * dim.x * std::max(size_t(1), dim.y),
                               cudaMemcpyHostToDevice));
         }
     }
     ~Array() {
         if (isComplete) {
-            CHECK_CUDA(cudaFreeArray(arr));
+            KOUEK_CUDA_CHECK(cudaFreeArray(arr));
             arr = nullptr;
             isComplete = false;
         }
@@ -69,7 +71,7 @@ class Array : Noncopyable {
     cudaExtent GetExtent() const {
         cudaChannelFormatDesc chnDesc;
         cudaExtent extent;
-        CHECK_CUDA(cudaArrayGetInfo(&chnDesc, &extent, nullptr, arr));
+        KOUEK_CUDA_CHECK(cudaArrayGetInfo(&chnDesc, &extent, nullptr, arr));
 
         return extent;
     }
@@ -103,12 +105,12 @@ class Texture : Noncopyable {
         resDesc.resType = cudaResourceTypeArray;
         resDesc.res.array.array = this->arr->Get();
 
-        isComplete =
-            cudaSuccess == CHECK_CUDA(cudaCreateTextureObject(&tex, &resDesc, &texDesc, nullptr));
+        isComplete = cudaSuccess ==
+                     KOUEK_CUDA_CHECK(cudaCreateTextureObject(&tex, &resDesc, &texDesc, nullptr));
     }
     ~Texture() {
         if (isComplete) {
-            CHECK_CUDA(cudaDestroyTextureObject(tex));
+            KOUEK_CUDA_CHECK(cudaDestroyTextureObject(tex));
             isComplete = false;
         }
     }
@@ -134,11 +136,11 @@ class Surface : Noncopyable {
         resDesc.resType = cudaResourceTypeArray;
         resDesc.res.array.array = this->arr->Get();
 
-        isComplete = cudaSuccess == CHECK_CUDA(cudaCreateSurfaceObject(&surf, &resDesc));
+        isComplete = cudaSuccess == KOUEK_CUDA_CHECK(cudaCreateSurfaceObject(&surf, &resDesc));
     }
     ~Surface() {
         if (isComplete) {
-            CHECK_CUDA(cudaDestroySurfaceObject(surf));
+            KOUEK_CUDA_CHECK(cudaDestroySurfaceObject(surf));
             isComplete = false;
         }
     }

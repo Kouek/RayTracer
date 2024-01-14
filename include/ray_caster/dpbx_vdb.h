@@ -36,7 +36,7 @@ class DepthBoxVDB : Noncopyable {
 
     static constexpr auto UndefRltIdx = std::numeric_limits<RelativeIndexTy>::max();
 
-    struct VDBParameter {
+    struct KOUEK_CUDA_ALIGN VDBParameter {
         uint8_t rootLev;
         uint8_t apronWid;
         uint8_t apronDepWid;
@@ -52,12 +52,12 @@ class DepthBoxVDB : Noncopyable {
         float voxPerVDB;
         glm::vec3 voxPerVol;
     };
-    struct Node {
+    struct KOUEK_CUDA_ALIGN Node {
         CoordTy pos;
         CoordTy brickPosInAtlas;
         IndexTy childPoolOffsRelative;
     };
-    struct DeviceData {
+    struct KOUEK_CUDA_ALIGN DeviceData {
         Node *nodePools;
         RelativeIndexTy *childPools;
         RelativeIndexTy *atlasBrickToNodeIndices;
@@ -66,26 +66,27 @@ class DepthBoxVDB : Noncopyable {
         cudaTextureObject_t atlasDepTex;
         VDBParameter vdbParam;
 
-        __host_dev__ Node &GetRoot() const {
+        KOUEK_CUDA_HOST_DEV Node &GetRoot() const {
             return nodePools[vdbParam.nodeStarts[vdbParam.rootLev]];
         }
-        __host_dev__ Node &GetNode(uint8_t lev, RelativeIndexTy nodeIdxRelative) const {
+        KOUEK_CUDA_HOST_DEV Node &GetNode(uint8_t lev, RelativeIndexTy nodeIdxRelative) const {
             return nodePools[vdbParam.nodeStarts[lev] + nodeIdxRelative];
         }
-        __host_dev__ Node &GetNode(IndexTy nodeIdxAbsolute) const {
+        KOUEK_CUDA_HOST_DEV Node &GetNode(IndexTy nodeIdxAbsolute) const {
             return nodePools[nodeIdxAbsolute];
         }
-        __host_dev__ RelativeIndexTy GetChild(uint8_t parLev, RelativeIndexTy offsRelative,
-                                              const CoordTy &posRelative) const {
+        KOUEK_CUDA_HOST_DEV RelativeIndexTy GetChild(uint8_t parLev, RelativeIndexTy offsRelative,
+                                                     const CoordTy &posRelative) const {
             auto idxRelative = PosRelativeToIdxRelative(parLev, posRelative);
             return childPools[vdbParam.childStarts[parLev - 1] + offsRelative + idxRelative];
         }
-        __host_dev__ RelativeIndexTy PosRelativeToIdxRelative(uint8_t parLev,
-                                                              const CoordTy &posRelative) const {
+        KOUEK_CUDA_HOST_DEV RelativeIndexTy
+        PosRelativeToIdxRelative(uint8_t parLev, const CoordTy &posRelative) const {
             auto log2Dim = vdbParam.log2Dims[parLev];
             return (posRelative.z << (log2Dim << 1)) | (posRelative.y << log2Dim) | posRelative.x;
         }
-        __host_dev__ RelativeIndexTy BrickPosInAtlasToNodeIdxRelative(const CoordTy &pos) const {
+        KOUEK_CUDA_HOST_DEV RelativeIndexTy
+        BrickPosInAtlasToNodeIdxRelative(const CoordTy &pos) const {
             return pos.z * vdbParam.atlasBrickPerVDB.y * vdbParam.atlasBrickPerVDB.x +
                    pos.y * vdbParam.atlasBrickPerVDB.x + pos.x;
         }

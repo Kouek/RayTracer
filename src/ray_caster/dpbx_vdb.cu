@@ -27,7 +27,7 @@ kouek::RayCaster::DepthBoxVDB::~DepthBoxVDB() {
     clear();
 
     if (d_deviceDatPtr) {
-        CHECK_CUDA(cudaFree(d_deviceDatPtr));
+        KOUEK_CUDA_CHECK(cudaFree(d_deviceDatPtr));
         d_deviceDatPtr = nullptr;
     }
 }
@@ -36,10 +36,10 @@ struct LevPos {
     uint8_t lev;
     kouek::RayCaster::DepthBoxVDB::CoordTy pos;
 
-    __host_dev__ static constexpr LevPos CreateInvalid() {
+    KOUEK_CUDA_HOST_DEV static constexpr LevPos CreateInvalid() {
         return {.lev = kouek::RayCaster::DepthBoxVDB::MaxLevelNum};
     }
-    __host_dev__ bool operator<(const LevPos &other) const {
+    KOUEK_CUDA_HOST_DEV bool operator<(const LevPos &other) const {
         if (lev == other.lev)
             if (pos.x == other.pos.x)
                 if (pos.y == other.pos.y)
@@ -51,17 +51,17 @@ struct LevPos {
         else
             return lev < other.lev;
     }
-    __host_dev__ bool operator==(const LevPos &other) const {
+    KOUEK_CUDA_HOST_DEV bool operator==(const LevPos &other) const {
         return lev == other.lev && pos == other.pos;
     }
 };
 
-__host_dev__ inline void assignNodes(uint8_t lev,
-                                     kouek::RayCaster::DepthBoxVDB::RelativeIndexTy nodeIdxRelative,
-                                     kouek::RayCaster::DepthBoxVDB::CoordValTy leafNodePerVolYxX,
-                                     kouek::RayCaster::DepthBoxVDB::CoordValTy lx,
-                                     const kouek::RayCaster::DepthBoxVDB::DeviceData &deviceDat,
-                                     const LevPos *compactedLevPoss) {
+KOUEK_CUDA_HOST_DEV inline void
+assignNodes(uint8_t lev, kouek::RayCaster::DepthBoxVDB::RelativeIndexTy nodeIdxRelative,
+            kouek::RayCaster::DepthBoxVDB::CoordValTy leafNodePerVolYxX,
+            kouek::RayCaster::DepthBoxVDB::CoordValTy lx,
+            const kouek::RayCaster::DepthBoxVDB::DeviceData &deviceDat,
+            const LevPos *compactedLevPoss) {
     using namespace kouek::RayCaster;
 
     auto &vdbParam = deviceDat.vdbParam;
@@ -87,7 +87,7 @@ __host_dev__ inline void assignNodes(uint8_t lev,
     deviceDat.GetNode(lev, nodeIdxRelative) = inode;
 }
 
-__host_dev__ inline void
+KOUEK_CUDA_HOST_DEV inline void
 assignChildren(uint8_t lev, kouek::RayCaster::DepthBoxVDB::RelativeIndexTy nodeIdxRelative,
                const kouek::RayCaster::DepthBoxVDB::DeviceData &deviceDat) {
     auto &vdbParam = deviceDat.vdbParam;
@@ -135,13 +135,13 @@ void updateAtlas(std::shared_ptr<kouek::CUDA::Array> &atlasArr,
     auto atlasChnDesc = [&]() {
         cudaChannelFormatDesc chnDesc;
         cudaExtent extent;
-        CHECK_CUDA(cudaArrayGetInfo(&chnDesc, &extent, nullptr, volTex.GetArray()->Get()));
+        KOUEK_CUDA_CHECK(cudaArrayGetInfo(&chnDesc, &extent, nullptr, volTex.GetArray()->Get()));
         return chnDesc;
     }();
     if (atlasArr) {
         cudaChannelFormatDesc chnDesc;
         cudaExtent extent;
-        CHECK_CUDA(cudaArrayGetInfo(&chnDesc, &extent, nullptr, atlasArr->Get()));
+        KOUEK_CUDA_CHECK(cudaArrayGetInfo(&chnDesc, &extent, nullptr, atlasArr->Get()));
 
         if (chnDesc.x != atlasChnDesc.x || chnDesc.y != atlasChnDesc.y ||
             chnDesc.z != atlasChnDesc.z || chnDesc.w != atlasChnDesc.w ||
@@ -635,6 +635,7 @@ void kouek::RayCaster::DepthBoxVDB::uploadDeviceData() {
     using namespace kouek::CUDA;
 
     if (!d_deviceDatPtr)
-        CHECK_CUDA(cudaMalloc(&d_deviceDatPtr, sizeof(*d_deviceDatPtr)));
-    CHECK_CUDA(cudaMemcpy(d_deviceDatPtr, &deviceDat, sizeof(deviceDat), cudaMemcpyHostToDevice));
+        KOUEK_CUDA_CHECK(cudaMalloc(&d_deviceDatPtr, sizeof(*d_deviceDatPtr)));
+    KOUEK_CUDA_CHECK(
+        cudaMemcpy(d_deviceDatPtr, &deviceDat, sizeof(deviceDat), cudaMemcpyHostToDevice));
 }

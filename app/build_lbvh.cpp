@@ -17,8 +17,7 @@ int main(int argc, char **argv) {
                                         "The path of the directory of the scene.");
     cmdParser.run_and_exit_if_error();
 
-    auto mesh = kouek::Data::OBJMesh();
-    mesh.LoadFromFile(cmdParser.get<std::string>("obj"));
+    kouek::Data::OBJMesh mesh(cmdParser.get<std::string>("obj"));
     if (!mesh.IsComplete())
         return 1;
     std::cout << std::format("Load mesh with {} vertices, {} faces.\n", mesh.GetPositions().size(),

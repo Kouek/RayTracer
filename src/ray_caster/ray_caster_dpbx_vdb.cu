@@ -337,7 +337,8 @@ __device__ uchar4 renderDepths(uint8_t displayLeafLayer,
 
                 glm::vec3 atlasBrickMinVoxPos =
                     param.leaf.brickPosInAtlas * vdb.vdbParam.voxPerAtlasBrick +
-                    static_cast<kouek::RayCaster::DepthBoxVDB::CoordValTy>(vdb.vdbParam.apronDepWid);
+                    static_cast<kouek::RayCaster::DepthBoxVDB::CoordValTy>(
+                        vdb.vdbParam.apronDepWid);
 
                 kouek::RayCaster::DepthDDA2D ddda2d;
                 if (ddda2d.Init(param.tCurr, vdb.vdbParam.voxsPerChild[1] - 1.f,
@@ -409,7 +410,8 @@ __device__ uchar4 renderPositionsAfterDepthSkip(
 
                 glm::vec3 atlasBrickMinVoxPos =
                     param.leaf.brickPosInAtlas * vdb.vdbParam.voxPerAtlasBrick +
-                    static_cast<kouek::RayCaster::DepthBoxVDB::CoordValTy>(vdb.vdbParam.apronDepWid);
+                    static_cast<kouek::RayCaster::DepthBoxVDB::CoordValTy>(
+                        vdb.vdbParam.apronDepWid);
 
                 if (depthSkip<T>(param, posInBrick, atlasBrickMinVoxPos, vdb, eyeRay))
                     return true;
@@ -447,12 +449,12 @@ void kouek::RayCaster::RayCaster::RenderDepthBoxVDB(cudaSurfaceObject_t rndrTo,
         using namespace kouek::CUDA;
         if (modifiable.modified) {
             if (!(*d_datPtrPtr))
-                CHECK_CUDA(cudaMalloc(d_datPtrPtr, sizeof(**d_datPtrPtr)));
+                KOUEK_CUDA_CHECK(cudaMalloc(d_datPtrPtr, sizeof(**d_datPtrPtr)));
 
             auto &dat = modifiable.GetAndReset();
-            CHECK_CUDA(cudaMemcpy(*d_datPtrPtr, &dat,
-                                  sizeof(std::remove_reference_t<decltype(dat)>),
-                                  cudaMemcpyHostToDevice));
+            KOUEK_CUDA_CHECK(cudaMemcpy(*d_datPtrPtr, &dat,
+                                        sizeof(std::remove_reference_t<decltype(dat)>),
+                                        cudaMemcpyHostToDevice));
         }
     };
     uploadInNeed(rndrParam, &d_rndrParamPtr);

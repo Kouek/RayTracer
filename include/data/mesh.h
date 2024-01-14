@@ -53,12 +53,7 @@ class OBJMesh {
                                                           "vt", "mtllib", "usemtl"};
 
   public:
-    OBJMesh() = default;
-    OBJMesh(const std::string &path) { LoadFromFile(path); }
-
-    void LoadFromFile(const std::string &path) {
-        isComplete = false;
-
+    explicit OBJMesh(const std::string &path) {
         std::ifstream in(path, std::ios::in);
         if (!in.is_open()) {
             auto srcLoc = std::source_location::current();
@@ -74,9 +69,13 @@ class OBJMesh {
             std::cerr << std::format("{} at {}:{}. Failed parsing line {}.\n", ErrTag,
                                      srcLoc.file_name(), srcLoc.line(), ln);
             positions.clear();
+            positions.shrink_to_fit();
             normals.clear();
+            normals.shrink_to_fit();
             texCoords.clear();
+            texCoords.shrink_to_fit();
             groups.clear();
+            groups.shrink_to_fit();
         };
         std::string lnBuf;
         while (std::getline(in, lnBuf)) {
@@ -203,11 +202,14 @@ class OBJMesh {
             }
             gridMin.z += dSz.z;
         }
+        mesh.isComplete = true;
 
         return mesh;
     }
 
   private:
+    OBJMesh() = default;
+
     std::string getPathPrefix(const std::string &path) {
         auto lastSep = path.find_last_of('/');
         if (lastSep == std::string::npos)

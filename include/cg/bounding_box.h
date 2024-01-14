@@ -11,17 +11,17 @@ struct AABB {
     glm::vec3 minPos;
     glm::vec3 maxPos;
 
-    __host_dev__ void Init() {
+    KOUEK_CUDA_HOST_DEV void Init() {
         minPos.x = minPos.y = minPos.z = CUDA::FloatMax;
         maxPos.x = maxPos.y = maxPos.z = CUDA::FloatMin;
     }
 
-    __host_dev__ void Init(const glm::vec3 &minPos, const glm::vec3 &maxPos) {
+    KOUEK_CUDA_HOST_DEV void Init(const glm::vec3 &minPos, const glm::vec3 &maxPos) {
         this->minPos = minPos;
         this->maxPos = maxPos;
     }
 
-    __host_dev__ void Expand(const glm::vec3 &pos) {
+    KOUEK_CUDA_HOST_DEV void Expand(const glm::vec3 &pos) {
 #ifdef __CUDA_ARCH__
 #pragma unroll
 #endif
@@ -33,7 +33,7 @@ struct AABB {
         }
     }
 
-    __host_dev__ void Expand(const AABB &other) {
+    KOUEK_CUDA_HOST_DEV void Expand(const AABB &other) {
 #ifdef __CUDA_ARCH__
 #pragma unroll
 #endif
@@ -45,19 +45,19 @@ struct AABB {
         }
     }
 
-    __host_dev__ bool operator==(const AABB &other) const {
+    KOUEK_CUDA_HOST_DEV bool operator==(const AABB &other) const {
         return minPos == other.minPos && maxPos == other.maxPos;
     }
-    __host_dev__ bool operator!=(const AABB &other) const { return !(*this == other); }
+    KOUEK_CUDA_HOST_DEV bool operator!=(const AABB &other) const { return !(*this == other); }
 
-    __host_dev__ static constexpr AABB CreateInitial() {
+    KOUEK_CUDA_HOST_DEV static constexpr AABB CreateInitial() {
         AABB ret;
         ret.minPos.x = ret.minPos.y = ret.minPos.z = CUDA::FloatMax;
         ret.maxPos.x = ret.maxPos.y = ret.maxPos.z = CUDA::FloatMin;
         return ret;
     }
 
-    __host_dev__ static constexpr AABB CreateNormalized() {
+    KOUEK_CUDA_HOST_DEV static constexpr AABB CreateNormalized() {
         AABB ret;
         ret.minPos.x = ret.minPos.y = ret.minPos.z = 0.f;
         ret.maxPos.x = ret.maxPos.y = ret.maxPos.z = 1.f;

@@ -17,7 +17,7 @@ struct Ray {
         float tExit;
     };
 
-    __host_dev__ HitResult Hit(const AABB &aabb) const {
+    KOUEK_CUDA_HOST_DEV HitResult Hit(const AABB &aabb) const {
         float ht[8];
         ht[0] = (aabb.minPos.x - pos.x) / dir.x;
         ht[1] = (aabb.maxPos.x - pos.x) / dir.x;

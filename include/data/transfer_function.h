@@ -31,13 +31,7 @@ template <typename T, T Min, T Max, T IncStep> class TransferFunction {
     static constexpr std::string_view ErrTag = "[TransferFunction Error]";
 
   public:
-    TransferFunction() = default;
-    TransferFunction(const std::string &path) { LoadFromFile(path); }
-
-    void LoadFromFile(const std::string &path) {
-        isComplete = false;
-
-        pnts.clear();
+    TransferFunction(const std::string &path) {
         scalarRng = {Max, Min};
 
         std::ifstream is(path, std::ios::in);
