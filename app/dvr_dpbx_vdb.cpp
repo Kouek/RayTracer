@@ -412,6 +412,9 @@ template <typename VoxelType> int run(const cli::Parser &parser) {
         drawUI();
     });
 
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
     return 0;
 }
 

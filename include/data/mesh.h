@@ -1,9 +1,9 @@
 #ifndef KOUEK_MESH_H
 #define KOUEK_MESH_H
 
+#include <filesystem>
 #include <format>
 #include <fstream>
-#include <functional>
 #include <iostream>
 #include <source_location>
 #include <string>
@@ -35,9 +35,10 @@ class OBJMesh {
     std::vector<glm::vec<3, IndexTy>> faceTexCoordIndices;
     std::unordered_map<IndexTy, std::string> grp2mtls;
 
-    std::string objPath;
-    std::string mtllibPath;
+    std::filesystem::path objPath;
+    std::filesystem::path mtllibPath;
 
+    static constexpr std::string_view ErrStat = "[OBJMesh Status]";
     static constexpr std::string_view ErrTag = "[OBJMesh Error]";
 
     enum class Tag : uint8_t {
@@ -53,12 +54,14 @@ class OBJMesh {
                                                           "vt", "mtllib", "usemtl"};
 
   public:
-    explicit OBJMesh(const std::string &path) {
+    explicit OBJMesh(const std::filesystem::path &path) {
+        using SrcLoc = std::source_location;
+
         std::ifstream in(path, std::ios::in);
         if (!in.is_open()) {
-            auto srcLoc = std::source_location::current();
             std::cerr << std::format("{} at {}:{}. Cannot open file at \"{}\".\n", ErrTag,
-                                     srcLoc.file_name(), srcLoc.line(), path);
+                                     SrcLoc::current().file_name(), SrcLoc::current().line(),
+                                     path.string());
             return;
         }
 
@@ -68,14 +71,6 @@ class OBJMesh {
         auto processParseErr = [&](std::source_location srcLoc = std::source_location::current()) {
             std::cerr << std::format("{} at {}:{}. Failed parsing line {}.\n", ErrTag,
                                      srcLoc.file_name(), srcLoc.line(), ln);
-            positions.clear();
-            positions.shrink_to_fit();
-            normals.clear();
-            normals.shrink_to_fit();
-            texCoords.clear();
-            texCoords.shrink_to_fit();
-            groups.clear();
-            groups.shrink_to_fit();
         };
         std::string lnBuf;
         while (std::getline(in, lnBuf)) {
@@ -147,7 +142,7 @@ class OBJMesh {
                 texCoords.emplace_back(v[0], v[1]);
             } break;
             case Tag::MaterialLibrary:
-                mtllibPath = getPathPrefix(objPath) + lnBuf.substr(offs + 1);
+                mtllibPath = objPath.parent_path() / lnBuf.substr(offs + 1);
                 break;
             case Tag::UseMaterial:
                 grp2mtls.emplace(std::piecewise_construct, std::forward_as_tuple(groups.size() - 1),
@@ -155,6 +150,18 @@ class OBJMesh {
                 break;
             }
         }
+
+        std::cout << std::format("{} at {}:{}. Loaded mesh at {}:\n", ErrStat,
+                                 SrcLoc::current().file_name(), SrcLoc::current().line(),
+                                 objPath.string());
+        std::cout << std::format("\tvertex num: {}, face num: {}\n", positions.size(),
+                                 facePositionIndices.size());
+        std::cout << std::format("{} at {}:{}. Loaded material at {}:\n", ErrStat,
+                                 SrcLoc::current().file_name(), SrcLoc::current().line(),
+                                 mtllibPath.string());
+        std::cout << std::format("\tgroups of num {}\n", groups.size());
+        for (auto &[grpIdx, mtlName] : grp2mtls)
+            std::cout << std::format("\t\tmaterial of group {}: {}\n", grpIdx, mtlName);
 
         isComplete = true;
     }
@@ -209,16 +216,6 @@ class OBJMesh {
 
   private:
     OBJMesh() = default;
-
-    std::string getPathPrefix(const std::string &path) {
-        auto lastSep = path.find_last_of('/');
-        if (lastSep == std::string::npos)
-            lastSep = path.find_last_of('\\');
-        if (lastSep == std::string::npos)
-            return "";
-
-        return path.substr(0, lastSep + 1);
-    }
 };
 
 } // namespace Data

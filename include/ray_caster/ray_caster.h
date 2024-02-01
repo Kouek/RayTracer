@@ -1,8 +1,10 @@
-#ifndef KOUEK_RAY_CASTER_H
-#define KOUEK_RAY_CASTER_H
+#ifndef KOUEK_RAY_CASTER_RAY_CASTER_H
+#define KOUEK_RAY_CASTER_RAY_CASTER_H
 
 #include <memory>
 #include <string_view>
+
+#include <glm/glm.hpp>
 
 #include <cuda/texture.h>
 #include <ray_caster/dpbx_vdb.h>
@@ -13,7 +15,7 @@ namespace RayCaster {
 
 class RayCaster : Noncopyable {
   public:
-    struct RenderParameter {
+    struct KOUEK_CUDA_ALIGN RenderParameter {
         bool useShading = false;
         glm::mat4 w2s;
         glm::mat4 invProj;
@@ -23,14 +25,14 @@ class RayCaster : Noncopyable {
         glm::vec3 lightPosInVolumeSpace;
         glm::vec3 lightCol;
     };
-    struct RenderParameterPerFrame {
+    struct KOUEK_CUDA_ALIGN RenderParameterPerFrame {
         glm::vec3 eyePos2w;
         glm::mat3 eyeRot2w;
     };
-    struct RAWVolumeRenderParameter {
+    struct KOUEK_CUDA_ALIGN RAWVolumeRenderParameter {
         glm::vec3 dim;
     };
-    struct DPBXVDBRenderParameter {
+    struct KOUEK_CUDA_ALIGN DPBXVDBRenderParameter {
         uint8_t displayLev;
         uint8_t displayLeafLayer;
     };
@@ -67,7 +69,7 @@ class RayCaster : Noncopyable {
     void SetWorldToScene(const glm::mat4 &w2s);
     void SetCameraToWorld(const glm::vec3 &eyePos2w, const glm::mat3 &eyeRot2w);
     void SetProjection(const glm::mat4 &proj);
-    
+
     struct InputShadingParameter {
         float ka, kd, ks, shiness;
         glm::vec3 lightPosInVolumeSpace;
@@ -88,4 +90,4 @@ class RayCaster : Noncopyable {
 } // namespace RayCaster
 } // namespace kouek
 
-#endif // !KOUEK_RAY_CASTER_H
+#endif // !KOUEK_RAY_CASTER_RAY_CASTER_H

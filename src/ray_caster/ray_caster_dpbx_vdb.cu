@@ -2,6 +2,7 @@
 #include <ray_caster/ray_caster.h>
 
 #include <format>
+#include <iostream>
 
 #include <thrust/for_each.h>
 #include <thrust/iterator/counting_iterator.h>
@@ -440,7 +441,7 @@ void kouek::RayCaster::RayCaster::RenderDepthBoxVDB(cudaSurfaceObject_t rndrTo,
                                                     const glm::ivec2 &rndrSz,
                                                     DPBXVDBRenderTarget rndrTarget) {
     if (!vdb || !tfTex) {
-        std::cerr << std::format("{} at {}:{}. vdb or tfTex is not set.\n", ErrTag, __FILE__,
+        std::cerr << std::format("{} at {}:{}. vdb or tfTex are not set.\n", ErrTag, __FILE__,
                                  __LINE__);
         return;
     }
@@ -501,7 +502,7 @@ void kouek::RayCaster::RayCaster::RenderDepthBoxVDB(cudaSurfaceObject_t rndrTo,
 
             uchar4 color;
             switch (rndrTarget) {
-            case kouek::RayCaster::RayCaster::DPBXVDBRenderTarget::Scene:
+            case DPBXVDBRenderTarget::Scene:
                 if (vdbPtr->vdbParam.apronDepWid == vdbPtr->vdbParam.apronWid)
                     if (rndrParamPtr->useShading)
                         color = renderScene<T, false, true>(tfTex, *rndrParamPtr, *vdbPtr, eyeRay);
@@ -512,11 +513,11 @@ void kouek::RayCaster::RayCaster::RenderDepthBoxVDB(cudaSurfaceObject_t rndrTo,
                 else
                     color = renderScene<T, true, false>(tfTex, *rndrParamPtr, *vdbPtr, eyeRay);
                 break;
-            case kouek::RayCaster::RayCaster::DPBXVDBRenderTarget::AABBs:
+            case DPBXVDBRenderTarget::AABBs:
                 color =
                     renderAABBs(dpbxvdbRndrParamPtr->displayLev, *rndrParamPtr, *vdbPtr, eyeRay);
                 break;
-            case kouek::RayCaster::RayCaster::DPBXVDBRenderTarget::Depths:
+            case DPBXVDBRenderTarget::Depths:
                 color = renderDepths<T>(dpbxvdbRndrParamPtr->displayLeafLayer, *rndrParamPtr,
                                         *vdbPtr, eyeRay);
                 break;

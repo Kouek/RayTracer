@@ -19,7 +19,7 @@ This project includes 2 parts: **Ray Tracer** and **Ray Caster**. All demos use 
 
 ## Input Arguments
 
-### dvr_dpbx_vdb
+### DirectVolumeRenderDepthBoxVDB
 
 This demo resamples the RAW volume into Depth-Box VDB or GVDB and performs Direct Volume Rendering on the volume.
 

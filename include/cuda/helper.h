@@ -35,6 +35,7 @@ inline cudaError_t Check(cudaError_t err, const char *fileName, uint32_t line) {
 
 constexpr auto FloatMin = std::numeric_limits<float>::lowest();
 constexpr auto FloatMax = std::numeric_limits<float>::max();
+constexpr auto FloatEps = std::numeric_limits<float>::epsilon();
 
 } // namespace CUDA
 } // namespace kouek

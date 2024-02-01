@@ -73,12 +73,13 @@ target_include_directories(
 # </lib>
 
 # <app>
-# <build_lbvh>
-set(TARGET_NAME "build_lbvh")
+# <rt_lbvh>
+set(TARGET_NAME "RayTraceLBVH")
 add_executable(
 	${TARGET_NAME}
-	"./app/build_lbvh.cpp"
+	"./app/rt_lbvh.cpp"
 	"${THIRD_PARTY_DIR}/glad/src/glad.c"
+	"${THIRD_PARTY_DIR}/tinyxml/tinyxml2.cpp"
 	${IMGUI_SRCS}
 	${IMPLOT_SRCS}
 )
@@ -88,9 +89,9 @@ target_link_libraries(
 	"glfw"
 	"ray_tracer"
 )
-# </build_lbvh>
+# </rt_lbvh>
 # <dvr_dpbx_vdb>
-set(TARGET_NAME "dvr_dpbx_vdb")
+set(TARGET_NAME "DirectVolumeRenderDepthBoxVDB")
 add_executable(
 	${TARGET_NAME}
 	"./app/dvr_dpbx_vdb.cpp"

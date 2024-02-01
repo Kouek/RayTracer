@@ -1,6 +1,7 @@
 #include <ray_caster/ray_caster.h>
 
 #include <format>
+#include <iostream>
 #include <type_traits>
 
 #include <thrust/for_each.h>
@@ -148,7 +149,7 @@ void kouek::RayCaster::RayCaster::RenderRAWVolume(cudaSurfaceObject_t rndrTo,
                                                   const glm::ivec2 &rndrSz,
                                                   RAWVolumeRenderTarget rndrTarget) {
     if (!volTex || !tfTex) {
-        std::cerr << std::format("{} at {}:{}. volTex or tfTex is not set.\n", ErrTag, __FILE__,
+        std::cerr << std::format("{} at {}:{}. volTex or tfTex are not set.\n", ErrTag, __FILE__,
                                  __LINE__);
         return;
     }
@@ -209,7 +210,7 @@ void kouek::RayCaster::RayCaster::RenderRAWVolume(cudaSurfaceObject_t rndrTo,
 
             uchar4 color;
             switch (rndrTarget) {
-            case kouek::RayCaster::RayCaster::RAWVolumeRenderTarget::Scene:
+            case RAWVolumeRenderTarget::Scene:
                 if (rndrParamPtr->useShading)
                     color = renderScene<true>(*rndrParamPtr, *rndrParamPerFramePtr,
                                               *rawVolRndrParamPtr, volTex, tfTex, eyeRay);
@@ -217,7 +218,7 @@ void kouek::RayCaster::RayCaster::RenderRAWVolume(cudaSurfaceObject_t rndrTo,
                     color = renderScene<false>(*rndrParamPtr, *rndrParamPerFramePtr,
                                                *rawVolRndrParamPtr, volTex, tfTex, eyeRay);
                 break;
-            case kouek::RayCaster::RayCaster::RAWVolumeRenderTarget::AABB:
+            case RAWVolumeRenderTarget::AABB:
                 color = renderAABB(eyeRay);
                 break;
             }

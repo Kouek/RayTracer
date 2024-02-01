@@ -28,6 +28,7 @@ struct GLFWxGLxCUDAApp {
     bool banInput = false;
     glm::ivec2 rndrSz;
     float movSens = 1.f;
+    glm::vec3 revolveCntr = glm::zero<glm::vec3>();
 
     GLuint offScrnFBO = 0;
     GLuint colAtch = 0;
@@ -42,10 +43,13 @@ struct GLFWxGLxCUDAApp {
 
     std::function<void(const glm::ivec2 &)> callerOnResized;
     std::function<void(const kouek::FPSCamera &)> callerOnCameraChanged;
+    std::function<void(const glm::ivec2 &, int, int, int)> callerOnMouseActivated;
 
-    template <typename OnResizedTy, typename OnCameraChangedTy>
-    GLFWxGLxCUDAApp(const glm::ivec2 &wndSz, const char *wndTitle, OnResizedTy callerOnResized,
-                    OnCameraChangedTy callerOnCameraChanged) {
+    GLFWxGLxCUDAApp(
+        const glm::ivec2 &wndSz, const char *wndTitle,
+        std::function<void(const glm::ivec2 &)> callerOnResized,
+        std::function<void(const kouek::FPSCamera &)> callerOnCameraChanged,
+        std::function<void(const glm::ivec2 &, int, int, int)> callerOnMouseActivated = nullptr) {
         this->callerOnResized = callerOnResized;
         this->callerOnCameraChanged = callerOnCameraChanged;
 
@@ -77,20 +81,16 @@ struct GLFWxGLxCUDAApp {
                     glfwSetWindowShouldClose(window, GLFW_TRUE);
                 break;
             case GLFW_KEY_UP:
-                camera.Revolve(glm::distance(camera.GetPos(), glm::zero<glm::vec3>()), 0.f,
-                               +RotSens);
+                camera.Revolve(glm::distance(camera.GetPos(), app.revolveCntr), 0.f, +RotSens);
                 break;
             case GLFW_KEY_DOWN:
-                camera.Revolve(glm::distance(camera.GetPos(), glm::zero<glm::vec3>()), 0.f,
-                               -RotSens);
+                camera.Revolve(glm::distance(camera.GetPos(), app.revolveCntr), 0.f, -RotSens);
                 break;
             case GLFW_KEY_LEFT:
-                camera.Revolve(glm::distance(camera.GetPos(), glm::zero<glm::vec3>()), +RotSens,
-                               0.f);
+                camera.Revolve(glm::distance(camera.GetPos(), app.revolveCntr), +RotSens, 0.f);
                 break;
             case GLFW_KEY_RIGHT:
-                camera.Revolve(glm::distance(camera.GetPos(), glm::zero<glm::vec3>()), -RotSens,
-                               0.f);
+                camera.Revolve(glm::distance(camera.GetPos(), app.revolveCntr), -RotSens, 0.f);
                 break;
             case GLFW_KEY_Q:
                 camera.Move(0.f, 0.f, -app.movSens);
@@ -115,6 +115,18 @@ struct GLFWxGLxCUDAApp {
                 break;
             }
         };
+        auto onMouseBtnActivated = [](GLFWwindow *window, int btn, int action, int mod) {
+            auto &app = *reinterpret_cast<GLFWxGLxCUDAApp *>(glfwGetWindowUserPointer(window));
+
+            glm::dvec2 pos;
+            glfwGetCursorPos(window, &pos.x, &pos.y);
+
+            glm::ivec2 posOnFrmBuf = {
+                glm::clamp(pos.x, 0., static_cast<double>(app.rndrSz.x - 1)),
+                glm::clamp(app.rndrSz.y - 1 - pos.y, 0., static_cast<double>(app.rndrSz.y - 1))};
+            if (app.callerOnMouseActivated)
+                app.callerOnMouseActivated(posOnFrmBuf, btn, action, mod);
+        };
         auto onFrameBufferSizeChanged = [](GLFWwindow *window, int width, int height) {
             if (width == 0 || height == 0)
                 return;
@@ -126,6 +138,7 @@ struct GLFWxGLxCUDAApp {
         };
         glfwSetKeyCallback(window, onKeyActivated);
         glfwSetFramebufferSizeCallback(window, onFrameBufferSizeChanged);
+        glfwSetMouseButtonCallback(window, onMouseBtnActivated);
 
         // Load GL functions
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {

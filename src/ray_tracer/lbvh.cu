@@ -2,6 +2,9 @@
 #include <ray_tracer/test_options.h>
 
 #include <bit>
+#include <format>
+#include <fstream>
+#include <iostream>
 #include <utility>
 
 #include <thrust/device_vector.h>
@@ -13,6 +16,17 @@
 
 #include <cuda/algorithm.h>
 #include <cuda/helper.h>
+
+kouek::RayTracer::LBVH::~LBVH() {
+    using namespace kouek::CUDA;
+
+    clear();
+
+    if (d_deviceDatPtr) {
+        KOUEK_CUDA_CHECK(cudaFree(d_deviceDatPtr));
+        d_deviceDatPtr = nullptr;
+    }
+}
 
 template <typename InodesTy, typename LftCommZeroLenFuncTy>
 KOUEK_CUDA_HOST_DEV void computeLBVHLinks(InodesTy &inodes, const uint32_t *mortons,
@@ -43,8 +57,7 @@ KOUEK_CUDA_HOST_DEV void computeLBVHLinks(InodesTy &inodes, const uint32_t *mort
 
         iOffsMax <<= 1;
     }
-    if (inodeIdx == 90)
-        int x = 0;
+
     int64_t iOffs = 0;
     while (true) {
         iOffsMax >>= 1;
@@ -86,11 +99,15 @@ KOUEK_CUDA_HOST_DEV void computeLBVHLinks(InodesTy &inodes, const uint32_t *mort
     inodes[inodeIdx] = inode;
 }
 
-void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
+void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &inputMesh,
+                                       const std::filesystem::path &logPath) {
     isComplete = false;
 
-    thrust::device_vector<glm::vec3> d_positions(mesh.positions);
-    thrust::device_vector<glm::vec<3, IndexTy>> d_facePositionIndices(mesh.facePositionIndices);
+    clear();
+
+    thrust::device_vector<glm::vec3> d_positions(inputMesh.positions);
+    thrust::device_vector<glm::vec<3, IndexTy>> d_facePositionIndices(
+        inputMesh.facePositionIndices);
     d_faces.resize(d_facePositionIndices.size());
     thrust::sequence(d_faces.begin(), d_faces.end(), IndexTy(0), IndexTy(1));
 
@@ -105,17 +122,14 @@ void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
             [] KOUEK_CUDA_HOST_DEV(const glm::vec3 &a, const glm::vec3 &b) {
                 return glm::vec3{glm::max(a.x, b.x), glm::max(a.y, b.y), glm::max(a.z, b.z)};
             });
-        rootAABB.Init(minPos, maxPos);
+        deviceDat.rootAABB.Init(minPos, maxPos);
     }
 
     thrust::device_vector<uint32_t> d_mortons(d_faces.size());
-    d_aabbs.clear();
-    // Initialize d_aabbs
-    d_aabbs.assign(d_faces.size(), AABB::CreateInitial());
-    // Compute d_aabbs and d_mortons,
+    // Compute d_mortons,
     // then sort d_faces and d_mortons according to d_mortons
     {
-        auto invDltPos = rootAABB.maxPos - rootAABB.minPos;
+        auto invDltPos = deviceDat.rootAABB.maxPos - deviceDat.rootAABB.minPos;
         for (uint8_t xyz = 0; xyz < 3; ++xyz)
             if (glm::abs(invDltPos[xyz]) < std::numeric_limits<float>::epsilon())
                 invDltPos[xyz] = 1.f;
@@ -124,18 +138,18 @@ void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
         thrust::for_each(
             thrust::make_counting_iterator(IndexTy(0)),
             thrust::make_counting_iterator(static_cast<IndexTy>(d_faces.size())),
-            [aabbs = thrust::raw_pointer_cast(d_aabbs.data()),
-             mortons = thrust::raw_pointer_cast(d_mortons.data()),
+            [mortons = thrust::raw_pointer_cast(d_mortons.data()),
              facePositionIndices = thrust::raw_pointer_cast(d_facePositionIndices.data()),
              positions = thrust::raw_pointer_cast(d_positions.data()), invDltPos,
-             minPos = rootAABB.minPos] __device__(IndexTy fi) {
-                auto facePosIdx3 = facePositionIndices[fi];
+             minPos = deviceDat.rootAABB.minPos] __device__(IndexTy fi) {
+                auto facePosIdx = facePositionIndices[fi];
 
                 auto aabb = AABB::CreateInitial();
+#ifdef __CUDA_ARCH__
 #pragma unroll
+#endif
                 for (uint8_t i = 0; i < 3; ++i)
-                    aabb.Expand(positions[facePosIdx3[i]]);
-                aabbs[fi] = aabb;
+                    aabb.Expand(positions[facePosIdx[i]]);
 
                 auto centroid = .5f * (aabb.minPos + aabb.maxPos);
                 centroid = (centroid - minPos) * invDltPos;
@@ -162,25 +176,46 @@ void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
     // Compact d_faces of which have the same morton codes into d_compactedFaces
     // Example:
     // <- Sorted Mortons = 0 0 1 2 2
-    // <- Faces = 0 1 2 3 4
     // -> Gradients = 1 0 1 1 0
     // -> Prefix Sums = 1 1 2 3 3 -> Compact Num = 3
+    // <- Indices of Faces = 0 1 2 3 4
     // -> Compacted Faces = 0 2 3
-    auto d_compactedFaces = [&]() {
+    d_compactedFaces = [&]() {
         auto d_gradients = CUDA::Difference<uint32_t>(d_mortons);
         return CUDA::CompactIndexes(static_cast<IndexTy>(d_faces.size()), d_gradients);
     }();
-    // Compact d_mortons
+    // Compact d_mortons and compute d_aabbs
+    thrust::device_vector<AABB> d_aabbs(d_compactedFaces.size(), AABB::CreateInitial());
     {
         decltype(d_mortons) d_newMortons(d_compactedFaces.size());
         thrust::for_each(
             thrust::make_counting_iterator(IndexTy(0)),
             thrust::make_counting_iterator(static_cast<IndexTy>(d_compactedFaces.size())),
-            [newMortons = thrust::raw_pointer_cast(d_newMortons.data()),
+            [faceNum = static_cast<IndexTy>(d_faces.size()),
+             cmpctNum = static_cast<IndexTy>(d_compactedFaces.size()),
+             newMortons = thrust::raw_pointer_cast(d_newMortons.data()),
              mortons = thrust::raw_pointer_cast(d_mortons.data()),
+             aabbs = thrust::raw_pointer_cast(d_aabbs.data()),
+             faces = thrust::raw_pointer_cast(d_faces.data()),
+             facePositionIndices = thrust::raw_pointer_cast(d_facePositionIndices.data()),
+             positions = thrust::raw_pointer_cast(d_positions.data()),
              compactedFaces =
                  thrust::raw_pointer_cast(d_compactedFaces.data())] __device__(IndexTy cmpctIdx) {
                 newMortons[cmpctIdx] = mortons[compactedFaces[cmpctIdx]];
+
+                auto aabb = AABB::CreateInitial();
+                auto nextCmpctFi =
+                    cmpctIdx == cmpctNum - 1 ? faceNum : compactedFaces[cmpctIdx + 1];
+                for (auto fi = compactedFaces[cmpctIdx]; fi < nextCmpctFi; ++fi) {
+                    auto face = faces[fi];
+                    auto facePosIdx = facePositionIndices[face];
+#ifdef __CUDA_ARCH__
+#pragma unroll
+#endif
+                    for (uint8_t i = 0; i < 3; ++i)
+                        aabb.Expand(positions[facePosIdx[i]]);
+                }
+                aabbs[cmpctIdx] = aabb;
             });
         d_mortons = std::move(d_newMortons);
     }
@@ -227,24 +262,17 @@ void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
                      });
 #endif // COMPUTE_LBVH_LINKS_IN_CPU
 
-#ifdef TEST_computeInternalNodes
-    test_computeInternalNodes(d_internalNodes);
-    return;
-#endif // TEST_computeInternalNodes
-
     // Re-compute d_aabbs according to d_inodes
     {
-        decltype(d_aabbs) d_newAABBs;
-        d_newAABBs.assign(d_internalNodes.size(), AABB::CreateInitial());
         thrust::for_each(
             thrust::make_counting_iterator(IndexTy(0)),
             thrust::make_counting_iterator(static_cast<IndexTy>(d_internalNodes.size())),
-            [newAABBs = thrust::raw_pointer_cast(d_newAABBs.data()),
-             aabbs = thrust::raw_pointer_cast(d_aabbs.data()),
+            [aabbs = thrust::raw_pointer_cast(d_aabbs.data()),
              inodes = thrust::raw_pointer_cast(d_internalNodes.data()),
              inodeNum = static_cast<IndexTy>(d_internalNodes.size()),
              lftCommZeroLen] __device__(IndexTy inodeIdx) {
                 IndexTy stk[30];
+                stk[0] = inodeIdx;
                 uint8_t stkSz = 1;
                 auto push = [&](IndexTy inodeIdx) {
                     stk[stkSz] = inodeIdx;
@@ -253,36 +281,126 @@ void kouek::RayTracer::LBVH::BuildFrom(const InputMesh &mesh) {
                 auto pop = [&]() { --stkSz; };
                 auto top = [&]() { return stk[stkSz - 1]; };
 
-                stk[0] = inodeIdx;
-                auto newAABB = AABB::CreateInitial();
+                auto aabb = AABB::CreateInitial();
                 while (stkSz != 0) {
                     auto &node = inodes[top()];
                     pop();
 
                     if (node.lft & InternalNode::ChildIsLeafMask)
-                        newAABB.Expand(aabbs[node.lft & InternalNode::LeafIndexMask]);
+                        aabb.Expand(aabbs[node.lft & InternalNode::LeafIndexMask]);
                     else
                         push(node.lft);
                     if (node.rht & InternalNode::ChildIsLeafMask)
-                        newAABB.Expand(aabbs[node.rht & InternalNode::LeafIndexMask]);
+                        aabb.Expand(aabbs[node.rht & InternalNode::LeafIndexMask]);
                     else
                         push(node.rht);
                 }
-                newAABBs[inodeIdx] = newAABB;
+                inodes[inodeIdx].aabb = aabb;
             });
-        d_aabbs = std::move(d_newAABBs);
+
+#ifdef TEST_computeInternalNodes
+        test_computeInternalNodes(d_internalNodes, d_faces, d_compactedFaces);
+#endif // TEST_computeInternalNodes
 
 #ifdef TEST_computeAABBs
         std::cout << std::format(
             "rootAABB computed by thrust::reduce is ({}, {}, {}) -> ({}, {}, {})\n",
-            rootAABB.minPos.x, rootAABB.minPos.y, rootAABB.minPos.z, rootAABB.maxPos.x,
-            rootAABB.maxPos.y, rootAABB.maxPos.z);
-        AABB rootAABB = d_aabbs.front();
-        std::cout << std::format("d_aabbs[0] is ({}, {}, {}) -> ({}, {}, {})\n", rootAABB.minPos.x,
-                                 rootAABB.minPos.y, rootAABB.minPos.z, rootAABB.maxPos.x,
-                                 rootAABB.maxPos.y, rootAABB.maxPos.z);
+            deviceDat.rootAABB.minPos.x, deviceDat.rootAABB.minPos.y, deviceDat.rootAABB.minPos.z,
+            deviceDat.rootAABB.maxPos.x, deviceDat.rootAABB.maxPos.y, deviceDat.rootAABB.maxPos.z);
+        InternalNode rootNode = d_internalNodes.front();
+        deviceDat.rootAABB = rootNode.aabb;
+        std::cout << std::format("d_internalNodes[0].aabb is ({}, {}, {}) -> ({}, {}, {})\n",
+                                 deviceDat.rootAABB.minPos.x, deviceDat.rootAABB.minPos.y,
+                                 deviceDat.rootAABB.minPos.z, deviceDat.rootAABB.maxPos.x,
+                                 deviceDat.rootAABB.maxPos.y, deviceDat.rootAABB.maxPos.z);
 #endif // TEST_computeAABBs
     }
 
+    deviceDat.faceNum = d_faces.size();
+    deviceDat.compactedFaceNum = d_compactedFaces.size();
+    deviceDat.faces = thrust::raw_pointer_cast(d_faces.data());
+    deviceDat.compactedFaces = thrust::raw_pointer_cast(d_compactedFaces.data());
+    deviceDat.internalNodes = thrust::raw_pointer_cast(d_internalNodes.data());
+
+    uploadDeviceData();
+
+    std::cout << std::format("{} at {}:{}. Builded LBVH.\n", StatTag, __FILE__, __LINE__);
+    std::cout << std::format("\tcompact num: {}, face num: {}\n", deviceDat.compactedFaceNum,
+                             deviceDat.faceNum);
     isComplete = true;
+
+    if (logPath.empty())
+        return;
+    std::ofstream os(logPath, std::ios::out);
+    if (!os.is_open()) {
+        std::cerr << std::format("{} at {}:{}. Cannot open log file at {}.\n", ErrTag, __FILE__,
+                                 __LINE__, logPath.string());
+        return;
+    }
+
+    os << "[OBJ]\n";
+    for (IndexTy i = 0; i < inputMesh.facePositionIndices.size(); ++i)
+        os << std::format(
+            "of:{}-> v0:{}, v1:{}, v2:{}\n", i, inputMesh.facePositionIndices[i][0] + 1,
+            inputMesh.facePositionIndices[i][1] + 1, inputMesh.facePositionIndices[i][2] + 1);
+    os << "\n[LBVH/Compacts]\n";
+    {
+        std::vector<IndexTy> compacts(d_compactedFaces.size());
+        thrust::copy(d_compactedFaces.begin(), d_compactedFaces.end(), compacts.begin());
+        std::vector<IndexTy> faces(d_faces.size());
+        thrust::copy(d_faces.begin(), d_faces.end(), faces.begin());
+        for (IndexTy i = 0; i < compacts.size(); ++i) {
+            auto fi = compacts[i];
+            auto fiEnd = i == compacts.size() - 1 ? faces.size() - 1 : compacts[i + 1];
+
+            os << std::format("c:{}-> ", i);
+            while (fi < fiEnd) {
+                if (fi == fiEnd - 1)
+                    os << std::format("f:{}->of:{}", fi, faces[fi]);
+                else
+                    os << std::format("f:{}->of:{}, ", fi, faces[fi]);
+                ++fi;
+            }
+            os << "\n";
+        }
+    }
+    os << "\n[LBVH/INodes]\n";
+    {
+        std::vector<InternalNode> inodes(d_internalNodes.size());
+        thrust::copy(d_internalNodes.begin(), d_internalNodes.end(), inodes.begin());
+        for (IndexTy i = 0; i < inodes.size(); ++i) {
+            auto lIsLeaf = (inodes[i].lft & InternalNode::ChildIsLeafMask) != 0;
+            auto rIsLeaf = (inodes[i].rht & InternalNode::ChildIsLeafMask) != 0;
+            os << std::format("i:{}-> lc:{}{}, rc:{}{}, aabb-> min:({},{},{}), max:({},{},{})\n", i,
+                              lIsLeaf ? inodes[i].lft & InternalNode::LeafIndexMask : inodes[i].lft,
+                              lIsLeaf ? "L" : "I",
+                              rIsLeaf ? inodes[i].rht & InternalNode::LeafIndexMask : inodes[i].rht,
+                              rIsLeaf ? "L" : "I", inodes[i].aabb.minPos.x, inodes[i].aabb.minPos.y,
+                              inodes[i].aabb.minPos.z, inodes[i].aabb.maxPos.x,
+                              inodes[i].aabb.maxPos.y, inodes[i].aabb.maxPos.z);
+        }
+    }
+
+    os.close();
+    std::cout << std::format("{} at {}:{}. Log LBVH to {}.\n", StatTag, __FILE__, __LINE__,
+                             logPath.string());
+}
+
+void kouek::RayTracer::LBVH::clear() {
+    auto release = [](auto &&d_v) {
+        d_v.clear();
+        d_v.shrink_to_fit();
+    };
+    release(d_faces);
+    release(d_compactedFaces);
+    release(d_internalNodes);
+}
+
+void kouek::RayTracer::LBVH::uploadDeviceData() {
+    using namespace kouek::CUDA;
+
+    if (!d_deviceDatPtr)
+        KOUEK_CUDA_CHECK(cudaMalloc(&d_deviceDatPtr, sizeof(*d_deviceDatPtr)));
+    KOUEK_CUDA_CHECK(
+        cudaMemcpy(d_deviceDatPtr, &deviceDat, sizeof(deviceDat), cudaMemcpyHostToDevice));
 }
