@@ -8,9 +8,6 @@
 kouek::RayTracer::RayTracer::~RayTracer() {}
 
 void kouek::RayTracer::RayTracer::SetMesh(const InputMesh &inputMesh) {
-    rndrParam.Set(&RenderParameter::triangleNum,
-                  static_cast<IndexTy>(inputMesh.facePositionIndices.size()));
-
     auto clear = [&](auto &&d_v) {
         d_v.clear();
         d_v.shrink_to_fit();
@@ -18,10 +15,12 @@ void kouek::RayTracer::RayTracer::SetMesh(const InputMesh &inputMesh) {
     clear(d_triangles);
     clear(d_triToPositionIndices);
     clear(d_positions);
-    clear(d_triAttrs);
+    clear(d_normals);
+    clear(d_texCoords);
+    clear(d_lights);
+    clear(d_materials);
 
-    d_triangles.resize(rndrParam.dat.triangleNum);
-    d_triAttrs.resize(rndrParam.dat.triangleNum);
+    d_triangles.resize(inputMesh.facePositionIndices.size());
 #define CPY_AOS_TO_SOA(AoS, d_SoA, SoAMember)                                                      \
     {                                                                                              \
         thrust::device_vector<decltype(decltype(d_SoA)::value_type::SoAMember)> d_AoS = AoS;       \
@@ -34,18 +33,38 @@ void kouek::RayTracer::RayTracer::SetMesh(const InputMesh &inputMesh) {
     }
     CPY_AOS_TO_SOA(inputMesh.faceNormalIndices, d_triangles, normIdx)
     CPY_AOS_TO_SOA(inputMesh.faceTexCoordIndices, d_triangles, texCoordIdx)
-    CPY_AOS_TO_SOA(inputMesh.normals, d_triAttrs, norm)
-    CPY_AOS_TO_SOA(inputMesh.texCoords, d_triAttrs, texCoord)
 #undef CPY_AOS_TO_SOA
+    {
+        thrust::device_vector<IndexTy> d_grpStartFaceIndices = inputMesh.groupStartFaceIndices;
+        thrust::for_each(thrust::make_counting_iterator(IndexTy(0)),
+                         thrust::make_counting_iterator(static_cast<IndexTy>(d_triangles.size())),
+                         [triangles = thrust::raw_pointer_cast(d_triangles.data()),
+                          grpStartFaceIndices = thrust::raw_pointer_cast(
+                              d_grpStartFaceIndices.data())] __device__(IndexTy fi) {
+                             IndexTy gi = 0;
+                             while (grpStartFaceIndices[gi] < fi)
+                                 ++gi;
+
+                             triangles[fi].grpIdx = gi;
+                         });
+    }
 
     d_triToPositionIndices = inputMesh.facePositionIndices;
     d_positions = inputMesh.positions;
+    d_normals = inputMesh.normals;
+    d_texCoords = inputMesh.texCoords;
+    d_lights = inputMesh.lights;
+    d_materials = inputMesh.materials;
 
+    rndrParam.Set(&RenderParameter::lightNum, static_cast<IndexTy>(inputMesh.lights.size()));
     rndrParam.Set(&RenderParameter::trianlges, thrust::raw_pointer_cast(d_triangles.data()));
     rndrParam.Set(&RenderParameter::triToPositionIndices,
                   thrust::raw_pointer_cast(d_triToPositionIndices.data()));
     rndrParam.Set(&RenderParameter::positions, thrust::raw_pointer_cast(d_positions.data()));
-    rndrParam.Set(&RenderParameter::triAttrs, thrust::raw_pointer_cast(d_triAttrs.data()));
+    rndrParam.Set(&RenderParameter::normals, thrust::raw_pointer_cast(d_normals.data()));
+    rndrParam.Set(&RenderParameter::texCoords, thrust::raw_pointer_cast(d_texCoords.data()));
+    rndrParam.Set(&RenderParameter::lights, thrust::raw_pointer_cast(d_lights.data()));
+    rndrParam.Set(&RenderParameter::materials, thrust::raw_pointer_cast(d_materials.data()));
 }
 
 void kouek::RayTracer::RayTracer::SetLBVH(std::shared_ptr<LBVH> lbvh) { this->lbvh = lbvh; }

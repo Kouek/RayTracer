@@ -16,10 +16,10 @@ static kouek::RayTracer::RayTracer renderer;
 
 static bool showFPS = true;
 static float currentFPS = 0.f;
-static int rndrTarget = 2;
+static int rndrTarget = 1;
 static int displayHeight = 0;
 
-static const char *rndrTargetNames = "Scene\0AABBs\0Triangles";
+static const char *rndrTargetNames = "Scene\0AABBs\0Triangles\0Lights\0Normals\0Texture Coords";
 
 static std::function<void(void)> onDisplayHeightChanged;
 
@@ -52,6 +52,8 @@ struct SceneConfig {
     bool isComplete = false;
     glm::ivec2 rndrSz;
     glm::vec3 eye, cntr, up;
+
+    std::unordered_map<std::string, kouek::Data::OBJMesh::InputLight> lights;
 
     SceneConfig(const std::filesystem::path &objPath) {
         auto path = objPath.parent_path() / (objPath.stem().string() + ".xml");
@@ -102,6 +104,34 @@ struct SceneConfig {
         if (!parse(up, "up"))
             return;
 
+        auto lht = xml.FirstChildElement("light");
+        while (lht) {
+            kouek::Data::OBJMesh::InputLight inLht;
+
+            cPtr = lht->Attribute("type");
+            if (!cPtr)
+                return;
+            if (strcmp(cPtr, "Quad") == 0)
+                inLht.type = kouek::Data::OBJMesh::Light::Type::Quad;
+            else if (strcmp(cPtr, "Sphere") == 0)
+                inLht.type = kouek::Data::OBJMesh::Light::Type::Sphere;
+            else
+                return;
+
+            cPtr = lht->Attribute("radiance");
+            if (!cPtr || sscanf(cPtr, "%f,%f,%f", &inLht.radiance.r, &inLht.radiance.g,
+                                &inLht.radiance.b) != 3)
+                return;
+
+            cPtr = lht->Attribute("mtlname");
+            if (!cPtr)
+                return;
+
+            lights.emplace(std::piecewise_construct, std::forward_as_tuple(cPtr),
+                           std::forward_as_tuple(inLht));
+            lht = lht->NextSiblingElement("light");
+        }
+
         isComplete = true;
     }
 };
@@ -116,10 +146,12 @@ int main(int argc, char **argv) {
     std::filesystem::path objPath(cmdParser.get<std::string>("obj"));
 
     SceneConfig scnCfg(objPath);
-    if (!scnCfg.isComplete)
+    if (!scnCfg.isComplete) {
+        std::cerr << std::format("[App Error]. Cannot open scene config.\n");
         return 1;
+    }
 
-    kouek::Data::OBJMesh mesh(objPath);
+    kouek::Data::OBJMesh mesh(objPath, scnCfg.lights);
     if (!mesh.IsComplete())
         return 1;
 
@@ -137,11 +169,52 @@ int main(int argc, char **argv) {
     rayTracer.SetMesh({.positions = mesh.GetPositions(),
                        .normals = mesh.GetNormals(),
                        .texCoords = mesh.GetTextureCoordinates(),
-                       .groups = mesh.GetGroups(),
+                       .groupStartFaceIndices = mesh.GetGroupStartFaceIndices(),
                        .facePositionIndices = mesh.GetFacePositionIndices(),
                        .faceNormalIndices = mesh.GetFaceNormalIndices(),
                        .faceTexCoordIndices = mesh.GetFaceTextureCoordinateIndices(),
-                       .grp2mtls = mesh.GetGroupToMaterials()});
+                       .lights =
+                           [&]() {
+                               auto &objLhts = mesh.GetLights();
+                               std::vector<kouek::RayTracer::RayTracer::Light> lhts;
+                               lhts.reserve(objLhts.size());
+                               for (auto &objLht : objLhts) {
+                                   auto &lht = lhts.emplace_back();
+
+                                   lht.type = static_cast<kouek::RayTracer::RayTracer::Light::Type>(
+                                       static_cast<uint8_t>(objLht.type));
+                                   lht.radiance = objLht.radiance;
+                                   if (lht.type == kouek::RayTracer::RayTracer::Light::Type::Quad) {
+                                       lht.quad.o = objLht.quad.o;
+                                       lht.quad.u = objLht.quad.u;
+                                       lht.quad.v = objLht.quad.v;
+                                   } else {
+                                       lht.sphere.o = objLht.sphere.o;
+                                       lht.sphere.r = objLht.sphere.r;
+                                   }
+                               }
+
+                               return lhts;
+                           }(),
+                       .materials =
+                           [&]() {
+                               auto &grp2mtlNames = mesh.GetGroupToMaterialNames();
+                               auto &name2mtls = mesh.GetNameToMaterials();
+                               std::vector<kouek::RayTracer::RayTracer::Material> matrs;
+                               matrs.reserve(grp2mtlNames.size());
+                               for (auto &[gi, mtlName] : grp2mtlNames) {
+                                   auto &matr = matrs.emplace_back();
+
+                                   auto &objMatr = name2mtls.at(mtlName);
+                                   matr.kd = objMatr.kd;
+                                   matr.ks = objMatr.ks;
+                                   matr.tr = objMatr.tr;
+                                   matr.ns = objMatr.ns;
+                                   matr.ni = objMatr.ni;
+                               }
+
+                               return matrs;
+                           }()});
     rayTracer.SetLBVH(lbvh);
 
     onDisplayHeightChanged = [&]() { rayTracer.SetDisplayHeight(displayHeight); };

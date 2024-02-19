@@ -96,9 +96,10 @@ __device__ uchar4 renderAABB(const kouek::RayTracer::RayTracer::RenderParameter 
                   glm::clamp(static_cast<uint8_t>(255.f * color.b), uint8_t(0), uint8_t(255)), 255};
 }
 
-__device__ uchar4 renderTriangles(const kouek::RayTracer::RayTracer::RenderParameter &rndrParam,
-                                  const kouek::RayTracer::LBVH::DeviceData &lbvh,
-                                  const kouek::Ray &eyeRay) {
+template <typename TriangleFuncTy>
+__device__ uchar4 rayCastLBVH(const kouek::RayTracer::RayTracer::RenderParameter &rndrParam,
+                              const kouek::RayTracer::LBVH::DeviceData &lbvh,
+                              const kouek::Ray &eyeRay, TriangleFuncTy triFunc) {
     using IndexTy = kouek::RayTracer::LBVH::IndexTy;
     using INodeTy = kouek::RayTracer::LBVH::InternalNode;
 
@@ -148,22 +149,60 @@ __device__ uchar4 renderTriangles(const kouek::RayTracer::RayTracer::RenderParam
             push(chIdx);
         else {
             auto cmpctIdx = chIdx & INodeTy::LeafIndexMask;
-            auto fi = lbvh.compactedFaces[cmpctIdx];
-            auto fiEnd = cmpctIdx == lbvh.compactedFaceNum - 1 ? lbvh.faceNum
-                                                               : lbvh.compactedFaces[cmpctIdx + 1];
-            while (fi < fiEnd) {
-                auto facePosIdx = rndrParam.triToPositionIndices[lbvh.faces[fi]];
-                auto hitTri = eyeRay.Hit(rndrParam.positions[facePosIdx[0]],
-                                         rndrParam.positions[facePosIdx[1]],
-                                         rndrParam.positions[facePosIdx[2]]);
-                if (hitTri.t >= 0.f && hitTri.t < tNearest) {
-                    color.r = hitTri.bary.x;
-                    color.g = hitTri.bary.y;
-                    color.b = 1.f - hitTri.bary.x - hitTri.bary.y;
-                    tNearest = hitTri.t;
+            auto lbvhFi = lbvh.compactedFaces[cmpctIdx];
+            auto lbvhFiEnd = cmpctIdx == lbvh.compactedFaceNum - 1
+                                 ? lbvh.faceNum
+                                 : lbvh.compactedFaces[cmpctIdx + 1];
+            while (lbvhFi < lbvhFiEnd) {
+                auto fi = lbvh.faces[lbvhFi];
+                auto facePosIdx = rndrParam.triToPositionIndices[fi];
+                auto hit =
+                    eyeRay.Hit(kouek::Ray::HitTriangle{.p0 = rndrParam.positions[facePosIdx[0]],
+                                                       .p1 = rndrParam.positions[facePosIdx[1]],
+                                                       .p2 = rndrParam.positions[facePosIdx[2]]});
+                if (hit.t >= 0.f && hit.t < tNearest) {
+                    triFunc(color, fi, hit);
+                    tNearest = hit.t;
                 }
-                ++fi;
+                ++lbvhFi;
             }
+        }
+    }
+
+    if (tNearest == kouek::CUDA::FloatMax)
+        return uchar4{0, 0, 0, 0};
+    return uchar4{glm::clamp(static_cast<uint8_t>(255.f * color.r), uint8_t(0), uint8_t(255)),
+                  glm::clamp(static_cast<uint8_t>(255.f * color.g), uint8_t(0), uint8_t(255)),
+                  glm::clamp(static_cast<uint8_t>(255.f * color.b), uint8_t(0), uint8_t(255)), 255};
+}
+
+__device__ uchar4 renderLights(const kouek::RayTracer::RayTracer::RenderParameter &rndrParam,
+                               const kouek::Ray &eyeRay) {
+    using IndexTy = kouek::RayTracer::RayTracer::IndexTy;
+
+    glm::vec3 color = {0.f, 0.f, 0.f};
+    auto tNearest = kouek::CUDA::FloatMax;
+
+    for (IndexTy li = 0; li < rndrParam.lightNum; ++li) {
+        auto lht = rndrParam.lights[li];
+
+        switch (lht.type) {
+        case kouek::RayTracer::RayTracer::Light::Type::Quad: {
+            auto hit =
+                eyeRay.Hit(kouek::Ray::HitQuad{.o = lht.quad.o, .u = lht.quad.u, .v = lht.quad.v});
+            if (hit.t >= 0.f && hit.t < tNearest) {
+                color.r = hit.u / glm::length(lht.quad.u);
+                color.g = hit.v / glm::length(lht.quad.v);
+                tNearest = hit.t;
+            }
+        } break;
+        case kouek::RayTracer::RayTracer::Light::Type::Sphere: {
+            auto hit = eyeRay.Hit(kouek::Ray::HitSphere{.r = lht.sphere.r, .o = lht.sphere.o});
+            if (hit.tEnter <= hit.tExit && hit.tEnter < tNearest) {
+                // TODO
+                tNearest = hit.tEnter;
+            }
+        } break;
         }
     }
 
@@ -242,7 +281,42 @@ void kouek::RayTracer::RayTracer::Render(cudaSurfaceObject_t rndrTo, const glm::
                 color = renderAABB(*rndrParamPtr, *lbvhPtr, eyeRay);
                 break;
             case RenderTarget::Triangles:
-                color = renderTriangles(*rndrParamPtr, *lbvhPtr, eyeRay);
+                color = rayCastLBVH(
+                    *rndrParamPtr, *lbvhPtr, eyeRay,
+                    [&](glm::vec3 &color, IndexTy fi, const kouek::Ray::HitTriangleResult &hit) {
+                        color.r = hit.bary.x;
+                        color.g = hit.bary.y;
+                        color.b = 1.f - hit.bary.x - hit.bary.y;
+                    });
+                break;
+            case RenderTarget::Lights:
+                color = renderLights(*rndrParamPtr, eyeRay);
+                break;
+            case RenderTarget::Normals:
+                color = rayCastLBVH(
+                    *rndrParamPtr, *lbvhPtr, eyeRay,
+                    [&](glm::vec3 &color, IndexTy fi, const kouek::Ray::HitTriangleResult &hit) {
+                        auto face = rndrParamPtr->trianlges[fi];
+                        glm::vec3 norms[3] = {rndrParamPtr->normals[face.normIdx[0]],
+                                              rndrParamPtr->normals[face.normIdx[1]],
+                                              rndrParamPtr->normals[face.normIdx[2]]};
+                        color = glm::abs(hit.bary.x * norms[0] + hit.bary.y * norms[0] +
+                                         (1.f - hit.bary.x - hit.bary.y) * norms[2]);
+                    });
+                break;
+            case RenderTarget::TextureCoords:
+                color = rayCastLBVH(
+                    *rndrParamPtr, *lbvhPtr, eyeRay,
+                    [&](glm::vec3 &color, IndexTy fi, const kouek::Ray::HitTriangleResult &hit) {
+                        auto face = rndrParamPtr->trianlges[fi];
+                        glm::vec2 norms[3] = {rndrParamPtr->normals[face.texCoordIdx[0]],
+                                              rndrParamPtr->normals[face.texCoordIdx[1]],
+                                              rndrParamPtr->normals[face.texCoordIdx[2]]};
+                        auto rg = glm::abs(hit.bary.x * norms[0] + hit.bary.y * norms[0] +
+                                           (1.f - hit.bary.x - hit.bary.y) * norms[2]);
+                        color.r = rg.r;
+                        color.g = rg.g;
+                    });
                 break;
             }
 

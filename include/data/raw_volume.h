@@ -25,7 +25,7 @@ template <typename T> class RAWVolume {
 
   public:
     RAWVolume(const std::string &path, const glm::vec<3, uint32_t> &dim,
-              const glm::u8vec3 &trAxis = {1, 2, 3}) {
+              const glm::i8vec3 &trAxis = {1, 2, 3}) {
         auto voxNum = static_cast<size_t>(dim.x) * dim.y * dim.z;
         auto volSz = sizeof(T) * voxNum;
 
