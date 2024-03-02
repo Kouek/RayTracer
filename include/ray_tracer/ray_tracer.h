@@ -9,8 +9,12 @@
 
 #include <glm/glm.hpp>
 
+#include <curand_kernel.h>
+
 #include <cuda/helper.h>
+#include <cuda/texture.h>
 #include <ray_tracer/lbvh.h>
+#include <ray_tracer/material.h>
 #include <util/meta_type.h>
 
 namespace kouek {
@@ -19,36 +23,17 @@ namespace RayTracer {
 class RayTracer : Noncopyable {
   public:
     using IndexTy = uint32_t;
+    
+    static constexpr float Eps = .001f;
 
     struct KOUEK_CUDA_ALIGN Triangle {
         glm::vec<3, IndexTy> normIdx;
         glm::vec<3, IndexTy> texCoordIdx;
         IndexTy grpIdx;
     };
-    struct KOUEK_CUDA_ALIGN Light {
-        enum class Type : uint8_t { Quad, Sphere, None };
-
-        Type type;
-        union {
-            struct {
-                glm::vec3 o, u, v;
-            } quad;
-            struct {
-                glm::vec3 o;
-                float r;
-            } sphere;
-        };
-        glm::vec3 radiance;
-    };
-    struct KOUEK_CUDA_ALIGN Material {
-        glm::vec3 kd;
-        glm::vec3 ks;
-        glm::vec3 tr;
-        float ni;
-        float ns;
-    };
     struct KOUEK_CUDA_ALIGN RenderParameter {
-        uint8_t displayHeight = 0;
+        uint8_t displayTreeHeight = 0;
+        uint8_t maxPathDepth = 16;
         glm::mat4 w2s;
         glm::mat4 invProj;
         IndexTy lightNum = 0;
@@ -66,7 +51,26 @@ class RayTracer : Noncopyable {
         glm::mat3 eyeRot2w;
     };
 
+    enum class RenderTarget {
+        Scene,
+        AABBs,
+        Triangles,
+        Lights,
+        Positions,
+        Normals,
+        TextureCoords,
+        None
+    };
+
   private:
+    float prevMaxSamplePerPixel = 1024.f;
+    float maxSamplePerPixel = 1024.f;
+    float currAccuSamplePerPixel = 0.f;
+
+    cudaSurfaceObject_t prevRndrTo;
+    glm::ivec2 prevRndrSz = glm::ivec2{0};
+    RenderTarget prevRndrTarget = RenderTarget::None;
+
     Modifiable<RenderParameter> rndrParam;
     RenderParameter *d_rndrParamPtr = nullptr;
 
@@ -88,6 +92,11 @@ class RayTracer : Noncopyable {
     thrust::device_vector<Light> d_lights;
     thrust::device_vector<Material> d_materials;
 
+    // Since Surface Object storing uchar4 will lose precision,
+    // use a memory storing float3 to keep average value
+    thrust::device_vector<glm::vec3> d_accuRndrTo;
+    thrust::device_vector<curandState> d_randStates;
+
   public:
     ~RayTracer();
 
@@ -107,11 +116,22 @@ class RayTracer : Noncopyable {
     void SetWorldToScene(const glm::mat4 &w2s);
     void SetCameraToWorld(const glm::vec3 &eyePos2w, const glm::mat3 &eyeRot2w);
     void SetProjection(const glm::mat4 &proj);
-    void SetDisplayHeight(uint8_t displayHeight);
+    void SetDisplayTreeHeight(uint8_t displayTreeHeight);
+    void SetMaxPathDepth(uint8_t maxPathDepth);
 
-    enum class RenderTarget { Scene, AABBs, Triangles, Lights, Normals, TextureCoords };
     void Render(cudaSurfaceObject_t rndrTo, const glm::ivec2 &rndrSz,
                 RenderTarget rndrTarget = RenderTarget::Scene);
+
+#define VAL_SETTER_GETTER(member, memberNameInFunc)                                                \
+    void Set##memberNameInFunc(const decltype(member) &##member) { this->member = ##member; }      \
+    const decltype(member) Get##memberNameInFunc() const { return member; }
+    VAL_SETTER_GETTER(maxSamplePerPixel, MaxSamplePerPixel)
+#undef VAL_SETTER_GETTER
+
+#define VAL_GETTER(member, memberNameInFunc)                                                       \
+    const decltype(member) Get##memberNameInFunc() const { return member; }
+    VAL_GETTER(currAccuSamplePerPixel, CurrentAccumulatedSamplePerPixel)
+#undef VAL_GETTER
 };
 
 } // namespace RayTracer

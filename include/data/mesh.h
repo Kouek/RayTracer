@@ -79,7 +79,7 @@ class OBJMesh {
     static constexpr std::array<std::string_view, 7> Tags{"g",  "f",      "v",     "vn",
                                                           "vt", "mtllib", "usemtl"};
     static constexpr std::array<std::string_view, 7> MTLTags{"Kd", "Ks", "Tr",
-                                                             "Ns", "Ni", "newmtl"};
+                                                             "Ni", "Ns", "newmtl"};
 
   public:
     struct InputLight {
@@ -203,14 +203,18 @@ class OBJMesh {
         for (auto &lht : lights) {
             switch (lht.type) {
             case Light::Type::Quad:
-                std::cout << std::format(
-                    "\t\tquad light: o:({},{},{}), u:({},{},{}), v:({},{},{})\n", lht.quad.o.x,
-                    lht.quad.o.y, lht.quad.o.z, lht.quad.u.x, lht.quad.u.y, lht.quad.u.z,
-                    lht.quad.v.x, lht.quad.v.y, lht.quad.v.z);
+                std::cout << std::format("\t\tquad light: o:({},{},{}), u:({},{},{}), "
+                                         "v:({},{},{}), radiance:({},{},{})\n",
+                                         lht.quad.o.x, lht.quad.o.y, lht.quad.o.z, lht.quad.u.x,
+                                         lht.quad.u.y, lht.quad.u.z, lht.quad.v.x, lht.quad.v.y,
+                                         lht.quad.v.z, lht.radiance.r, lht.radiance.g,
+                                         lht.radiance.b);
                 break;
             case Light::Type::Sphere:
-                std::cout << std::format("\t\tsphere light: o:({},{},{}), r:{}\n", lht.sphere.o.x,
-                                         lht.sphere.o.y, lht.sphere.o.z, lht.sphere.r);
+                std::cout << std::format(
+                    "\t\tsphere light: o:({},{},{}), r:{}, radiance:({},{},{})\n", lht.sphere.o.x,
+                    lht.sphere.o.y, lht.sphere.o.z, lht.sphere.r, lht.radiance.r, lht.radiance.g,
+                    lht.radiance.b);
                 break;
             }
         }
@@ -360,12 +364,16 @@ class OBJMesh {
         case Light::Type::Sphere: {
             lht.sphere.o = glm::vec3(0.f);
             auto fiBeg = grpStartFaceIndices[gi];
+            auto div = 3.f * (fiEnd - fiBeg);
             for (auto fi = fiBeg; fi < fiEnd; ++fi)
                 for (uint8_t i = 0; i < 3; ++i)
-                    lht.sphere.o += positions[facePositionIndices[fi][i]];
-            lht.sphere.o /= fiEnd - fiBeg;
+                    lht.sphere.o += positions[facePositionIndices[fi][i]] / div;
 
-            lht.sphere.r = glm::distance(lht.sphere.o, positions[facePositionIndices[fiBeg][0]]);
+            lht.sphere.r = 0.f;
+            for (auto fi = fiBeg; fi < fiEnd; ++fi)
+                for (uint8_t i = 0; i < 3; ++i)
+                    lht.sphere.r +=
+                        glm::distance(positions[facePositionIndices[fi][i]], lht.sphere.o) / div;
         } break;
         }
 

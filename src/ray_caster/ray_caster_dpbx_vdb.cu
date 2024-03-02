@@ -447,7 +447,6 @@ void kouek::RayCaster::RayCaster::RenderDepthBoxVDB(cudaSurfaceObject_t rndrTo,
     }
 
     auto uploadInNeed = [](auto &modifiable, auto **d_datPtrPtr) {
-        using namespace kouek::CUDA;
         if (modifiable.modified) {
             if (!(*d_datPtrPtr))
                 KOUEK_CUDA_CHECK(cudaMalloc(d_datPtrPtr, sizeof(**d_datPtrPtr)));

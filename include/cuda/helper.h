@@ -22,7 +22,7 @@ inline cudaError_t Check(cudaError_t err, const char *fileName, uint32_t line) {
 #ifdef NDEBUG
 #define KOUEK_CUDA_CHECK(call) call
 #else
-#define KOUEK_CUDA_CHECK(call) Check(call, __FILE__, __LINE__)
+#define KOUEK_CUDA_CHECK(call) kouek::CUDA::Check(call, __FILE__, __LINE__)
 #endif // NDEBUG
 
 #ifdef __CUDACC__

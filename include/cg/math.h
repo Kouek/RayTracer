@@ -75,12 +75,57 @@ inline void PrintGLMMat4(const glm::mat4 &mat4, const char *name = nullptr) {
 #ifdef __CUDA_ARCH__
 __device__
 #endif
-inline void GammaCorrect(glm::vec3& rgb) {
+    inline void
+    HDRToLDRCorrect(glm::vec3 &rgb) {
+    rgb = rgb / (rgb + 1.f);
+}
+
+#ifdef __CUDA_ARCH__
+__device__
+#endif
+    inline void
+    GammaCorrect(glm::vec3 &rgb) {
 #ifdef __CUDA_ARCH__
 #pragma unroll
 #endif
     for (uint8_t xyz = 0; xyz < 3; ++xyz)
         rgb[xyz] = glm::pow(rgb[xyz], 1.f / 2.2f);
+}
+
+#ifdef __CUDA_ARCH__
+__device__
+#endif
+    inline glm::vec3
+    GenerateTangent(const glm::vec3 &norm) {
+    if (glm::abs(norm.y) < .999f)
+        return glm::normalize(glm::cross(norm, glm::vec3(0.f, 1.f, 0.f)));
+    else
+        return glm::normalize(glm::cross(norm, glm::vec3(1.f, 0.f, 0.f)));
+}
+
+#ifdef __CUDA_ARCH__
+__device__
+#endif
+    inline glm::vec3
+    ThetaPhiToDirection(float theta, float phi, const glm::vec3 &norm, const glm::vec3 &tngnt) {
+    auto sinTheta = glm::sin(theta);
+    glm::vec3 dir = {glm::cos(phi) * sinTheta, glm::cos(theta), glm::sin(phi) * sinTheta};
+
+    auto biTngnt = glm::normalize(glm::cross(tngnt, norm));
+    return glm::normalize(glm::mat3(tngnt, norm, biTngnt) * dir);
+}
+
+#ifdef __CUDA_ARCH__
+__device__
+#endif
+    inline glm::vec3
+    CosineThetaPhiToDirection(float cosTheta, float phi, const glm::vec3 &norm,
+                              const glm::vec3 &tngnt) {
+    auto sinTheta = glm::sqrt(1.f - cosTheta * cosTheta);
+    glm::vec3 dir = {glm::cos(phi) * sinTheta, cosTheta, glm::sin(phi) * sinTheta};
+
+    auto biTngnt = glm::normalize(glm::cross(tngnt, norm));
+    return glm::normalize(glm::mat3(tngnt, norm, biTngnt) * dir);
 }
 
 } // namespace Math

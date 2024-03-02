@@ -84,12 +84,22 @@ struct Ray {
     }
 
     struct KOUEK_CUDA_ALIGN HitSphere {
-        float r;
+        float rSqr;
         const glm::vec3 &o;
     };
     KOUEK_CUDA_HOST_DEV HitShellResult Hit(HitSphere sphere) const {
-        // TODO
-        return {0.f, 0.f};
+        auto p2o = sphere.o - pos;
+        auto p2oDotDir = glm::dot(p2o, dir);
+        if (p2oDotDir < 0.f)
+            return {0.f, -1.f};
+
+        auto qSqr = glm::dot(p2o, p2o) - p2oDotDir * p2oDotDir;
+        auto rSqr = sphere.rSqr;
+        if (qSqr > rSqr)
+            return {0.f, -2.f};
+
+        auto p = glm::sqrt(rSqr - qSqr);
+        return {glm::max(p2oDotDir - p, 0.f), p2oDotDir + 2.f * p};
     }
 };
 

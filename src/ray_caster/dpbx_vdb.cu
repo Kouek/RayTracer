@@ -22,8 +22,6 @@
     }
 
 kouek::RayCaster::DepthBoxVDB::~DepthBoxVDB() {
-    using namespace kouek::CUDA;
-
     clear();
 
     if (d_deviceDatPtr) {
@@ -124,7 +122,6 @@ void updateAtlas(std::shared_ptr<kouek::CUDA::Array> &atlasArr,
                  kouek::RayCaster::DepthBoxVDB::DeviceData &deviceDat,
                  const kouek::CUDA::Texture &volTex,
                  const thrust::device_vector<glm::vec<2, T>> &d_emptyScalarRngs) {
-    using namespace kouek::CUDA;
 
     auto &vdbParam = deviceDat.vdbParam;
 
@@ -632,8 +629,6 @@ void kouek::RayCaster::DepthBoxVDB::clear() {
 }
 
 void kouek::RayCaster::DepthBoxVDB::uploadDeviceData() {
-    using namespace kouek::CUDA;
-
     if (!d_deviceDatPtr)
         KOUEK_CUDA_CHECK(cudaMalloc(&d_deviceDatPtr, sizeof(*d_deviceDatPtr)));
     KOUEK_CUDA_CHECK(

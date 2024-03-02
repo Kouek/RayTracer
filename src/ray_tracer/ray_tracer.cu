@@ -5,7 +5,12 @@
 
 #include <cg/math.h>
 
-kouek::RayTracer::RayTracer::~RayTracer() {}
+kouek::RayTracer::RayTracer::~RayTracer() {
+    if (d_rndrParamPtr)
+        KOUEK_CUDA_CHECK(cudaFree(d_rndrParamPtr));
+    if (d_rndrParamPerFramePtr)
+        KOUEK_CUDA_CHECK(cudaFree(d_rndrParamPerFramePtr));
+}
 
 void kouek::RayTracer::RayTracer::SetMesh(const InputMesh &inputMesh) {
     auto clear = [&](auto &&d_v) {
@@ -38,14 +43,16 @@ void kouek::RayTracer::RayTracer::SetMesh(const InputMesh &inputMesh) {
         thrust::device_vector<IndexTy> d_grpStartFaceIndices = inputMesh.groupStartFaceIndices;
         thrust::for_each(thrust::make_counting_iterator(IndexTy(0)),
                          thrust::make_counting_iterator(static_cast<IndexTy>(d_triangles.size())),
-                         [triangles = thrust::raw_pointer_cast(d_triangles.data()),
+                         [grpNum = inputMesh.groupStartFaceIndices.size(),
+                          triangles = thrust::raw_pointer_cast(d_triangles.data()),
                           grpStartFaceIndices = thrust::raw_pointer_cast(
                               d_grpStartFaceIndices.data())] __device__(IndexTy fi) {
-                             IndexTy gi = 0;
-                             while (grpStartFaceIndices[gi] < fi)
-                                 ++gi;
+                             IndexTy gi;
+                             for (gi = 1; gi < grpNum; ++gi)
+                                 if (grpStartFaceIndices[gi] > fi)
+                                     break;
 
-                             triangles[fi].grpIdx = gi;
+                             triangles[fi].grpIdx = gi - 1;
                          });
     }
 
@@ -84,6 +91,10 @@ void kouek::RayTracer::RayTracer::SetProjection(const glm::mat4 &proj) {
     rndrParam.Set(&RenderParameter::invProj, invProj);
 }
 
-void kouek::RayTracer::RayTracer::SetDisplayHeight(uint8_t displayHeight) {
-    rndrParam.Set(&RenderParameter::displayHeight, displayHeight);
+void kouek::RayTracer::RayTracer::SetDisplayTreeHeight(uint8_t displayTreeHeight) {
+    rndrParam.Set(&RenderParameter::displayTreeHeight, displayTreeHeight);
+}
+
+void kouek::RayTracer::RayTracer::SetMaxPathDepth(uint8_t maxPathDepth) {
+    rndrParam.Set(&RenderParameter::maxPathDepth, maxPathDepth);
 }

@@ -18,8 +18,6 @@
 #include <cuda/helper.h>
 
 kouek::RayTracer::LBVH::~LBVH() {
-    using namespace kouek::CUDA;
-
     clear();
 
     if (d_deviceDatPtr) {
@@ -397,8 +395,6 @@ void kouek::RayTracer::LBVH::clear() {
 }
 
 void kouek::RayTracer::LBVH::uploadDeviceData() {
-    using namespace kouek::CUDA;
-
     if (!d_deviceDatPtr)
         KOUEK_CUDA_CHECK(cudaMalloc(&d_deviceDatPtr, sizeof(*d_deviceDatPtr)));
     KOUEK_CUDA_CHECK(

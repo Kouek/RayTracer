@@ -12,8 +12,6 @@
 #include <cg/ray.h>
 
 void kouek::RayCaster::RayCaster::SetRAWVolume(std::shared_ptr<CUDA::Texture> volTex) {
-    using namespace kouek::CUDA;
-
     this->volTex = volTex;
 
     cudaResourceDesc resDesc;
@@ -155,7 +153,6 @@ void kouek::RayCaster::RayCaster::RenderRAWVolume(cudaSurfaceObject_t rndrTo,
     }
 
     auto uploadInNeed = [](auto &modifiable, auto **d_datPtrPtr) {
-        using namespace kouek::CUDA;
         if (modifiable.modified) {
             if (!(*d_datPtrPtr))
                 KOUEK_CUDA_CHECK(cudaMalloc(d_datPtrPtr, sizeof(**d_datPtrPtr)));

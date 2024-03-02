@@ -1,6 +1,7 @@
 #ifndef GLFW_GL_APP_H
 #define GLFW_GL_APP_H
 
+#include <functional>
 #include <memory>
 #include <source_location>
 
@@ -163,7 +164,6 @@ struct GLFWxGLxCUDAApp {
     }
     ~GLFWxGLxCUDAApp() {
         if (cudaGLRes != nullptr) {
-            using namespace kouek::CUDA;
             KOUEK_CUDA_CHECK(cudaGraphicsUnregisterResource(cudaGLRes));
             cudaGLRes = nullptr;
         }
@@ -197,8 +197,6 @@ struct GLFWxGLxCUDAApp {
     }
 
     cudaSurfaceObject_t MapGLResourceToCUDA() {
-        using namespace kouek::CUDA;
-
         cudaSurfaceObject_t cudaSurf;
         KOUEK_CUDA_CHECK(cudaGraphicsMapResources(1, &cudaGLRes));
         KOUEK_CUDA_CHECK(
@@ -208,15 +206,12 @@ struct GLFWxGLxCUDAApp {
     }
 
     void UnmapGLResourceFromCUDA(cudaSurfaceObject_t cudaSurf) {
-        using namespace kouek::CUDA;
-
         KOUEK_CUDA_CHECK(cudaDestroySurfaceObject(cudaSurf));
         KOUEK_CUDA_CHECK(cudaGraphicsUnmapResources(1, &cudaGLRes));
     }
 
   private:
     void onResized() {
-        using namespace kouek::CUDA;
         if (cudaGLRes) {
             // Unbind if is binded
             KOUEK_CUDA_CHECK(cudaGraphicsUnregisterResource(cudaGLRes));

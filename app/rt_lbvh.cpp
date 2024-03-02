@@ -12,16 +12,20 @@
 #include "glfw_gl_app.h"
 
 static kouek::FPSCamera camera;
-static kouek::RayTracer::RayTracer renderer;
 
 static bool showFPS = true;
 static float currentFPS = 0.f;
-static int rndrTarget = 1;
-static int displayHeight = 0;
+static float currentSPP = 0.f;
+static float maxSPP = 0.f;
+static int maxDepthPerPath = (kouek::RayTracer::RayTracer::RenderParameter().maxPathDepth);
+static int rndrTarget = 0;
+static int displayTreeHeight = (kouek::RayTracer::RayTracer::RenderParameter().displayTreeHeight);
 
-static const char *rndrTargetNames = "Scene\0AABBs\0Triangles\0Lights\0Normals\0Texture Coords";
+static const char *rndrTargetNames =
+    "Scene\0AABBs\0Triangles\0Lights\0Positions\0Normals\0Texture Coords";
 
 static std::function<void(void)> onDisplayHeightChanged;
+static std::function<void(void)> onMaxDepthPerPathChanged;
 
 void drawUI() {
     ImGui_ImplOpenGL3_NewFrame();
@@ -32,14 +36,19 @@ void drawUI() {
     ImGui::Checkbox("Show FPS", &showFPS);
     if (showFPS)
         ImGui::LabelText("FPS", "%.2f", currentFPS);
+    ImGui::LabelText("SPP", "%.2f / %.2f", currentSPP, maxSPP);
     ImGui::End();
 
     ImGui::Begin("Rendering");
     ImGui::Combo("Render Target", &rndrTarget, rndrTargetNames);
     if (rndrTarget ==
         static_cast<decltype(rndrTarget)>(kouek::RayTracer::RayTracer::RenderTarget::AABBs))
-        if (ImGui::SliderInt("Display Height", &displayHeight, 0, 29))
+        if (ImGui::SliderInt("Display Height", &displayTreeHeight, 0, 29))
             onDisplayHeightChanged();
+    if (rndrTarget ==
+        static_cast<decltype(rndrTarget)>(kouek::RayTracer::RayTracer::RenderTarget::Scene))
+        if (ImGui::SliderInt("Max Depth per Path", &maxDepthPerPath, 1, 16))
+            onMaxDepthPerPathChanged();
     ImGui::End();
 
     ImGui::EndFrame();
@@ -166,60 +175,62 @@ int main(int argc, char **argv) {
 
     kouek::RayTracer::RayTracer rayTracer;
     rayTracer.SetWorldToScene(glm::identity<glm::mat4>());
-    rayTracer.SetMesh({.positions = mesh.GetPositions(),
-                       .normals = mesh.GetNormals(),
-                       .texCoords = mesh.GetTextureCoordinates(),
-                       .groupStartFaceIndices = mesh.GetGroupStartFaceIndices(),
-                       .facePositionIndices = mesh.GetFacePositionIndices(),
-                       .faceNormalIndices = mesh.GetFaceNormalIndices(),
-                       .faceTexCoordIndices = mesh.GetFaceTextureCoordinateIndices(),
-                       .lights =
-                           [&]() {
-                               auto &objLhts = mesh.GetLights();
-                               std::vector<kouek::RayTracer::RayTracer::Light> lhts;
-                               lhts.reserve(objLhts.size());
-                               for (auto &objLht : objLhts) {
-                                   auto &lht = lhts.emplace_back();
+    rayTracer.SetMesh(
+        {.positions = mesh.GetPositions(),
+         .normals = mesh.GetNormals(),
+         .texCoords = mesh.GetTextureCoordinates(),
+         .groupStartFaceIndices = mesh.GetGroupStartFaceIndices(),
+         .facePositionIndices = mesh.GetFacePositionIndices(),
+         .faceNormalIndices = mesh.GetFaceNormalIndices(),
+         .faceTexCoordIndices = mesh.GetFaceTextureCoordinateIndices(),
+         .lights =
+             [&]() {
+                 auto &objLhts = mesh.GetLights();
+                 std::vector<kouek::RayTracer::Light> lhts;
+                 lhts.reserve(objLhts.size());
+                 for (auto &objLht : objLhts) {
+                     auto &lht = lhts.emplace_back();
 
-                                   lht.type = static_cast<kouek::RayTracer::RayTracer::Light::Type>(
-                                       static_cast<uint8_t>(objLht.type));
-                                   lht.radiance = objLht.radiance;
-                                   if (lht.type == kouek::RayTracer::RayTracer::Light::Type::Quad) {
-                                       lht.quad.o = objLht.quad.o;
-                                       lht.quad.u = objLht.quad.u;
-                                       lht.quad.v = objLht.quad.v;
-                                   } else {
-                                       lht.sphere.o = objLht.sphere.o;
-                                       lht.sphere.r = objLht.sphere.r;
-                                   }
-                               }
+                     if (objLht.type == kouek::Data::OBJMesh::Light::Type::Quad)
+                         lht = kouek::RayTracer::Light::CreateQuad(objLht.quad.o, objLht.quad.u,
+                                                                   objLht.quad.v, objLht.radiance);
+                     else
+                         lht = kouek::RayTracer::Light::CreateSphere(
+                             objLht.sphere.r, objLht.sphere.o, objLht.radiance);
+                 }
 
-                               return lhts;
-                           }(),
-                       .materials =
-                           [&]() {
-                               auto &grp2mtlNames = mesh.GetGroupToMaterialNames();
-                               auto &name2mtls = mesh.GetNameToMaterials();
-                               std::vector<kouek::RayTracer::RayTracer::Material> matrs;
-                               matrs.reserve(grp2mtlNames.size());
-                               for (auto &[gi, mtlName] : grp2mtlNames) {
-                                   auto &matr = matrs.emplace_back();
+                 return lhts;
+             }(),
+         .materials =
+             [&]() {
+                 auto &grp2mtlNames = mesh.GetGroupToMaterialNames();
+                 auto &name2mtls = mesh.GetNameToMaterials();
+                 auto &scnLhts = scnCfg.lights;
 
-                                   auto &objMatr = name2mtls.at(mtlName);
-                                   matr.kd = objMatr.kd;
-                                   matr.ks = objMatr.ks;
-                                   matr.tr = objMatr.tr;
-                                   matr.ns = objMatr.ns;
-                                   matr.ni = objMatr.ni;
-                               }
+                 std::vector<kouek::RayTracer::Material> matrs;
+                 matrs.resize(grp2mtlNames.size());
+                 for (auto &[gi, mtlName] : grp2mtlNames) {
+                     auto &objMatr = name2mtls.at(mtlName);
 
-                               return matrs;
-                           }()});
+                     auto lhtItr = scnLhts.find(mtlName);
+                     if (lhtItr == scnLhts.end())
+                         matrs[gi] = kouek::RayTracer::Material::Create(
+                             objMatr.kd, objMatr.ks, objMatr.tr, objMatr.ni, objMatr.ns);
+                     else
+                         matrs[gi] = kouek::RayTracer::Material::Create(
+                             objMatr.kd, objMatr.ks, objMatr.tr, objMatr.ni, objMatr.ns,
+                             lhtItr->second.radiance);
+                 }
+
+                 return matrs;
+             }()});
     rayTracer.SetLBVH(lbvh);
 
-    onDisplayHeightChanged = [&]() { rayTracer.SetDisplayHeight(displayHeight); };
+    onDisplayHeightChanged = [&]() { rayTracer.SetDisplayTreeHeight(displayTreeHeight); };
+    onMaxDepthPerPathChanged = [&]() { rayTracer.SetMaxPathDepth(maxDepthPerPath); };
 
     onDisplayHeightChanged();
+    onMaxDepthPerPathChanged();
 
     GLFWxGLxCUDAApp app(/*default window size*/ scnCfg.rndrSz,
                         /*window title*/ "Path Tracer",
@@ -263,6 +274,8 @@ int main(int argc, char **argv) {
 
         rayTracer.Render(surfRndrTo, app.rndrSz,
                          static_cast<kouek::RayTracer::RayTracer::RenderTarget>(rndrTarget));
+        maxSPP = rayTracer.GetMaxSamplePerPixel();
+        currentSPP = rayTracer.GetCurrentAccumulatedSamplePerPixel();
 
         app.UnmapGLResourceFromCUDA(surfRndrTo);
 

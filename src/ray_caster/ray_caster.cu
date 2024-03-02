@@ -4,7 +4,6 @@
 
 kouek::RayCaster::RayCaster::~RayCaster() {
     auto releaseWhenAllocated = [&](auto **d_datPtr) {
-        using namespace kouek::CUDA;
         if (*d_datPtr) {
             KOUEK_CUDA_CHECK(cudaFree(*d_datPtr));
             *d_datPtr = nullptr;
