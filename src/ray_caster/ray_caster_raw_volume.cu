@@ -33,7 +33,7 @@ renderScene(const kouek::RayCaster::RayCaster::RenderParameter &rndrParam,
     using namespace kouek;
 
     auto hit = eyeRay.Hit(AABB::CreateNormalized());
-    if (hit.tEnter >= hit.tExit)
+    if (hit.tEnter > hit.tExit)
         return uchar4{0, 0, 0, 0};
 
     uint32_t stepCnt = 0;
@@ -48,7 +48,7 @@ renderScene(const kouek::RayCaster::RayCaster::RenderParameter &rndrParam,
     eyeRay.pos *= rawVolRndrParam.dim;
     eyeRay.dir = glm::normalize(eyeRay.dir * rawVolRndrParam.dim);
     hit = eyeRay.Hit(AABB{.minPos = {0.f, 0.f, 0.f}, .maxPos = rawVolRndrParam.dim});
-    if (hit.tEnter >= hit.tExit)
+    if (hit.tEnter > hit.tExit)
         return uchar4{0, 0, 0, 0};
 
     auto step = (hit.tExit - hit.tEnter) / (maxStepCnt - 1);
@@ -120,6 +120,7 @@ renderScene(const kouek::RayCaster::RayCaster::RenderParameter &rndrParam,
         eyeRay.pos += step * eyeRay.dir;
     }
 
+    kouek::Math::HDRToLDRCorrect(rgb);
     kouek::Math::GammaCorrect(rgb);
     return uchar4{glm::clamp(static_cast<uint8_t>(255.f * rgb.r), uint8_t(0), uint8_t(255)),
                   glm::clamp(static_cast<uint8_t>(255.f * rgb.g), uint8_t(0), uint8_t(255)),
@@ -131,7 +132,7 @@ __device__ uchar4 renderAABB(kouek::Ray &eyeRay) {
     using namespace kouek;
 
     auto hit = eyeRay.Hit(AABB::CreateNormalized());
-    if (hit.tEnter >= hit.tExit)
+    if (hit.tEnter > hit.tExit)
         return uchar4{0, 0, 0, 0};
 
     auto enterPos = eyeRay.pos + hit.tEnter * eyeRay.dir;

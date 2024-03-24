@@ -122,6 +122,7 @@ void updateAtlas(std::shared_ptr<kouek::CUDA::Array> &atlasArr,
                  kouek::RayCaster::DepthBoxVDB::DeviceData &deviceDat,
                  const kouek::CUDA::Texture &volTex,
                  const thrust::device_vector<glm::vec<2, T>> &d_emptyScalarRngs) {
+    using namespace kouek::CUDA;
 
     auto &vdbParam = deviceDat.vdbParam;
 
@@ -465,8 +466,8 @@ void kouek::RayCaster::DepthBoxVDB::BuildFrom(
         }
     }
 
-// #define COMPUTE_LBVH_LINKS_IN_CPU
-#ifdef COMPUTE_LBVH_LINKS_IN_CPU
+// #define COMPUTE_VDB_LINKS_IN_CPU
+#ifdef COMPUTE_VDB_LINKS_IN_CPU
     // Assign nodes
     std::vector<decltype(d_nodePools)::value_type> nodePools(totNodeNum);
 
@@ -568,7 +569,7 @@ void kouek::RayCaster::DepthBoxVDB::BuildFrom(
                     pos *= deviceDat.vdbParam.dims[l - 1];
                 deviceDat.GetNode(lev, nodeIdxRelative).pos = pos;
             });
-#endif // COMPUTE_LBVH_LINKS_IN_CPU
+#endif // COMPUTE_VDB_LINKS_IN_CPU
 
 #ifdef TEST_computeNodesAndChildren
     test_computeNodesAndChildren(d_compactedLeaves.size(), deviceDat, d_nodePools, d_childPools);

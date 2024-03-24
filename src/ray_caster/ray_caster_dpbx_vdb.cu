@@ -52,7 +52,7 @@ __device__ void rayCastVDB(const kouek::RayCaster::RayCaster::RenderParameter &r
     // Hit the scene
     auto hit = eyeRay.Hit(AABB::CreateNormalized());
     if constexpr (CullWhenNotHitVol)
-        if (hit.tEnter >= hit.tExit)
+        if (hit.tEnter > hit.tExit)
             return;
     if constexpr (!std::is_same_v<decltype(callbacks.scnSpaceCallback), nullptr_t>)
         callbacks.scnSpaceCallback(hit.tEnter, hit.tExit);
@@ -64,7 +64,7 @@ __device__ void rayCastVDB(const kouek::RayCaster::RayCaster::RenderParameter &r
     // Hit the volume
     hit = eyeRay.Hit(AABB{.minPos = {0.f, 0.f, 0.f}, .maxPos = vdbParam.voxPerVol});
     if constexpr (CullWhenNotHitVol)
-        if (hit.tEnter >= hit.tExit)
+        if (hit.tEnter > hit.tExit)
             return;
     if constexpr (!std::is_same_v<decltype(callbacks.volSpaceCallback), nullptr_t>)
         callbacks.volSpaceCallback(hit.tEnter, hit.tExit);
@@ -74,7 +74,7 @@ __device__ void rayCastVDB(const kouek::RayCaster::RayCaster::RenderParameter &r
                           .maxPos = {vdbParam.voxPerVDB, vdbParam.voxPerVDB, vdbParam.voxPerVDB}});
     if constexpr (!std::is_same_v<decltype(callbacks.vdbSpaceCallback), nullptr_t>)
         callbacks.vdbSpaceCallback(hit.tEnter, hit.tExit);
-    if (hit.tEnter >= hit.tExit)
+    if (hit.tEnter > hit.tExit)
         return;
 
     auto stk = RayCaster::VDBStack::Create(vdb);
@@ -274,6 +274,7 @@ __device__ uchar4 renderScene(cudaTextureObject_t tfTex,
         }};
     rayCastVDB(rndrParam, vdb, eyeRay, callbacks);
 
+    kouek::Math::HDRToLDRCorrect(rgb);
     kouek::Math::GammaCorrect(rgb);
     return uchar4{glm::clamp(static_cast<uint8_t>(255.f * rgb.r), uint8_t(0), uint8_t(255)),
                   glm::clamp(static_cast<uint8_t>(255.f * rgb.g), uint8_t(0), uint8_t(255)),

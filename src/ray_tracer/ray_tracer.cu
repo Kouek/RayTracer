@@ -72,6 +72,13 @@ void kouek::RayTracer::RayTracer::SetMesh(const InputMesh &inputMesh) {
     rndrParam.Set(&RenderParameter::texCoords, thrust::raw_pointer_cast(d_texCoords.data()));
     rndrParam.Set(&RenderParameter::lights, thrust::raw_pointer_cast(d_lights.data()));
     rndrParam.Set(&RenderParameter::materials, thrust::raw_pointer_cast(d_materials.data()));
+
+    rndrParam.Set(&RenderParameter::lightTotArea, [&]() {
+        auto ret = 0.f;
+        for (auto &lht : inputMesh.lights)
+            ret += lht.area;
+        return ret;
+    }());
 }
 
 void kouek::RayTracer::RayTracer::SetLBVH(std::shared_ptr<LBVH> lbvh) { this->lbvh = lbvh; }

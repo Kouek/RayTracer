@@ -182,7 +182,6 @@ __device__ uchar4 rayCastLBVH(const kouek::RayTracer::RayTracer::RenderParameter
 template <bool IsSimple> struct KOUEK_CUDA_ALIGN Nearest {
     float t;
     glm::vec2 bary;
-    glm::vec3 tngnt;
     kouek::RayTracer::RayTracer::IndexTy fi;
 };
 
@@ -259,7 +258,6 @@ rayCastLBVH(const kouek::RayTracer::RayTracer::RenderParameter &rndrParam,
                     nearest.t = hit.t;
                     if constexpr (!IsSimple) {
                         nearest.bary = hit.bary;
-                        nearest.tngnt = hitTri.p1 - hitTri.p0;
                         nearest.fi = fi;
                     }
                 }
@@ -320,12 +318,12 @@ __device__ glm::vec3 renderScene(const kouek::RayTracer::RayTracer::RenderParame
 
     constexpr auto RR = .8f;
 
-    glm::vec3 preMult(1.f);
+    glm::vec3 throughout(1.f);
     glm::vec3 Lo(0.f);
-    for (uint8_t depth = 0; depth < rndrParam.maxPathDepth; ++depth) {
-        if (glm::max(preMult.r, glm::max(preMult.g, preMult.b)) < kouek::CUDA::FloatEps)
-            break;
-
+    for (uint8_t depth = 0;
+         depth < rndrParam.maxPathDepth &&
+         glm::max(throughout.r, glm::max(throughout.g, throughout.b)) >= kouek::CUDA::FloatEps;
+         ++depth) {
         auto nearest = rayCastLBVH(rndrParam, lbvh, ray);
         if (nearest.t == kouek::CUDA::FloatMax)
             break;
@@ -334,20 +332,16 @@ __device__ glm::vec3 renderScene(const kouek::RayTracer::RayTracer::RenderParame
         auto matr = rndrParam.materials[triangle.grpIdx];
 
         if (matr.emissive) {
-            Lo += preMult * matr.emission;
+            Lo += throughout * matr.emission;
             break;
         }
-
-        auto u = curand_uniform(&randState);
-        if (u > RR)
-            break;
 
         auto norm = [&]() {
             glm::vec3 norm[] = {rndrParam.normals[triangle.normIdx[0]],
                                 rndrParam.normals[triangle.normIdx[1]],
                                 rndrParam.normals[triangle.normIdx[2]]};
-            return nearest.bary.x * norm[0] + nearest.bary.y * norm[1] +
-                   (1.f - nearest.bary.x - nearest.bary.y) * norm[2];
+            return glm::normalize(nearest.bary.x * norm[0] + nearest.bary.y * norm[1] +
+                                  (1.f - nearest.bary.x - nearest.bary.y) * norm[2]);
         }();
         auto dirOut = -ray.dir;
         ray.pos = ray.pos + nearest.t * ray.dir + Eps * norm;
@@ -357,77 +351,80 @@ __device__ glm::vec3 renderScene(const kouek::RayTracer::RayTracer::RenderParame
             float pdf;
         };
         auto direct = [&]() -> Direct {
-            auto lht = [&]() {
-                auto u = curand_uniform(&randState) * rndrParam.lightNum;
-                u = glm::floor(u);
+            Direct ret{glm::vec3(0.f), 0.f};
+            for (IndexTy li = 0; li < rndrParam.lightNum; ++li) {
+                auto lht = rndrParam.lights[li];
+                auto lhtSample = [&]() {
+                    auto u0 = curand_uniform(&randState);
+                    auto u1 = curand_uniform(&randState);
 
-                auto li = static_cast<IndexTy>(u);
-                if (li == rndrParam.lightNum)
-                    return rndrParam.lights[0];
-                return rndrParam.lights[li];
-            }();
-            auto lhtSample = [&]() {
-                auto u0 = curand_uniform(&randState);
-                auto u1 = curand_uniform(&randState);
+                    switch (lht.type) {
+                    case decltype(lht)::Type::Quad:
+                        return lht.SampleQuad(u0, u1);
+                    case decltype(lht)::Type::Sphere:
+                    default:
+                        return lht.SampleSphere(u0, u1, ray.pos);
+                    }
+                }();
+                lhtSample.pos += Eps * lhtSample.norm;
 
-                switch (lht.type) {
-                case decltype(lht)::Type::Quad:
-                    return lht.SampleQuad(u0, u1);
-                case decltype(lht)::Type::Sphere:
-                default:
-                    return lht.SampleSphere(u0, u1, ray.pos);
-                }
-            }();
-            lhtSample.pos += Eps * lhtSample.norm;
+                auto in = lhtSample.pos - ray.pos;
+                auto sqrIn = glm::dot(in, in);
 
-            auto in = lhtSample.pos - ray.pos;
-            auto sqrIn = glm::dot(in, in);
+                ray.dir = glm::normalize(in);
+                auto factor = glm::max(glm::dot(ray.dir, norm), 0.f) *
+                              glm::max(glm::dot(-ray.dir, lhtSample.norm), 0.f) / sqrIn * lht.area /
+                              rndrParam.lightTotArea;
+                if (factor < kouek::CUDA::FloatEps)
+                    continue;
 
-            ray.dir = glm::normalize(in);
-            auto nearest = rayCastLBVH<true>(rndrParam, lbvh, ray);
-            if (nearest.t < glm::sqrt(sqrIn) - Eps)
-                return {glm::vec3(0.f), 0.f};
+                auto nearest = rayCastLBVH<true>(rndrParam, lbvh, ray);
+                if (nearest.t < glm::sqrt(sqrIn) - Eps)
+                    continue;
 
-            auto pdf = lhtSample.pdf / rndrParam.lightNum;
-            return {matr.BRDF(ray.dir, dirOut, norm) * lht.radiance *
-                        glm::max(glm::dot(ray.dir, norm), 0.f) *
-                        glm::max(glm::dot(-ray.dir, lhtSample.norm), 0.f) / sqrIn / pdf,
-                    pdf};
+                auto pdf = lhtSample.pdf;
+                ret.Li += factor / pdf * lht.radiance * matr.BRDF(ray.dir, dirOut, norm);
+                ret.pdf += pdf;
+            }
+            return ret;
         }();
 
         float pdfIndrct;
-        u = curand_uniform(&randState);
+        auto u = curand_uniform(&randState);
         auto u0 = curand_uniform(&randState);
         auto u1 = curand_uniform(&randState);
         if (u <= matr.kdOverKdAddKs) {
-            nearest.tngnt = glm::normalize(nearest.tngnt);
-            ray.dir = kouek::Math::ThetaPhiToDirection(
-                glm::acos(glm::sqrt(u0)), glm::two_pi<float>() * u1, norm, nearest.tngnt);
-            pdfIndrct = glm::dot(ray.dir, norm) * glm::one_over_pi<float>();
+            auto tngnt = kouek::Math::GenerateTangent(norm);
+            ray.dir = kouek::Math::CosineThetaPhiToDirection(
+                glm::sqrt(1.f - u0), glm::two_pi<float>() * u1, norm, tngnt);
+            pdfIndrct = glm::dot(ray.dir, norm) * glm::one_over_pi<float>() * matr.kdOverKdAddKs;
         } else {
-            auto reflect = glm::normalize(2.f * norm - dirOut);
+            auto reflect = glm::normalize(2.f * glm::dot(norm, dirOut) * norm - dirOut);
             auto tngnt = kouek::Math::GenerateTangent(reflect);
             ray.dir =
                 kouek::Math::ThetaPhiToDirection(glm::acos(glm::pow(u0, 1.f / (matr.ns + 1.f))),
                                                  glm::two_pi<float>() * u1, reflect, tngnt);
             pdfIndrct = (matr.ns + 1.f) * glm::one_over_two_pi<float>() *
-                        glm::pow(glm::max(glm::dot(reflect, ray.dir), 0.f), matr.ns);
+                        glm::pow(glm::max(glm::dot(reflect, ray.dir), 0.f), matr.ns) *
+                        (1.f - matr.kdOverKdAddKs);
         }
 
-        Lo += preMult * direct.Li;
-        preMult *= matr.BRDF(ray.dir, dirOut, norm) * glm::dot(ray.dir, norm) / pdfIndrct;
+        Lo += throughout * direct.Li;
+        throughout *= glm::dot(ray.dir, norm) / pdfIndrct / RR * matr.BRDF(ray.dir, dirOut, norm);
 
-        // auto pdfDrctPower = direct.pdf * direct.pdf;
-        // auto pdfIndrctPower = pdfIndrct * pdfIndrct;
-        // auto pdfPowerSum = pdfDrctPower + pdfIndrctPower;
-        //
-        // Lo += preMult * pdfDrctPower / pdfPowerSum * direct.Li;
+        /*auto pdfDrctPower = direct.pdf * direct.pdf;
+        auto pdfIndrctPower = pdfIndrct * pdfIndrct;
+        auto pdfPowerSum = pdfDrctPower + pdfIndrctPower;
 
-        // preMult *= matr.BRDF(ray.dir, dirOut, norm) * glm::dot(ray.dir, norm) / pdfIndrct *
-        //            pdfIndrctPower / pdfPowerSum;
+        Lo += throughout * pdfDrctPower / pdfPowerSum * direct.Li;
+        throughout *= pdfIndrctPower / pdfPowerSum * glm::dot(ray.dir, norm) / pdfIndrct / RR *
+                      matr.BRDF(ray.dir, dirOut, norm);*/
+
+        u = curand_uniform(&randState);
+        if (u > RR && depth > 1)
+            break;
     }
 
-    Lo /= RR;
     kouek::Math::HDRToLDRCorrect(Lo);
     kouek::Math::GammaCorrect(Lo);
     return Lo;

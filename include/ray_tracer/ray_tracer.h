@@ -23,7 +23,7 @@ namespace RayTracer {
 class RayTracer : Noncopyable {
   public:
     using IndexTy = uint32_t;
-    
+
     static constexpr float Eps = .001f;
 
     struct KOUEK_CUDA_ALIGN Triangle {
@@ -33,7 +33,7 @@ class RayTracer : Noncopyable {
     };
     struct KOUEK_CUDA_ALIGN RenderParameter {
         uint8_t displayTreeHeight = 0;
-        uint8_t maxPathDepth = 16;
+        uint8_t maxPathDepth = 4;
         glm::mat4 w2s;
         glm::mat4 invProj;
         IndexTy lightNum = 0;
@@ -43,6 +43,7 @@ class RayTracer : Noncopyable {
         glm::vec3 *positions = nullptr;
         glm::vec3 *normals = nullptr;
         glm::vec2 *texCoords = nullptr;
+        float lightTotArea;
         Light *lights = nullptr;
         Material *materials = nullptr;
     };

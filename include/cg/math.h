@@ -98,7 +98,7 @@ __device__
     inline glm::vec3
     GenerateTangent(const glm::vec3 &norm) {
     if (glm::abs(norm.y) < .999f)
-        return glm::normalize(glm::cross(norm, glm::vec3(0.f, 1.f, 0.f)));
+        return glm::normalize(glm::cross(glm::vec3(0.f, 1.f, 0.f), norm));
     else
         return glm::normalize(glm::cross(norm, glm::vec3(1.f, 0.f, 0.f)));
 }
@@ -109,10 +109,10 @@ __device__
     inline glm::vec3
     ThetaPhiToDirection(float theta, float phi, const glm::vec3 &norm, const glm::vec3 &tngnt) {
     auto sinTheta = glm::sin(theta);
-    glm::vec3 dir = {glm::cos(phi) * sinTheta, glm::cos(theta), glm::sin(phi) * sinTheta};
+    glm::vec3 dir = {glm::cos(phi) * sinTheta, glm::sin(phi) * sinTheta, glm::cos(theta)};
 
-    auto biTngnt = glm::normalize(glm::cross(tngnt, norm));
-    return glm::normalize(glm::mat3(tngnt, norm, biTngnt) * dir);
+    auto biTngnt = glm::normalize(glm::cross(norm, tngnt));
+    return glm::normalize(glm::mat3(tngnt, biTngnt, norm) * dir);
 }
 
 #ifdef __CUDA_ARCH__
@@ -121,11 +121,11 @@ __device__
     inline glm::vec3
     CosineThetaPhiToDirection(float cosTheta, float phi, const glm::vec3 &norm,
                               const glm::vec3 &tngnt) {
-    auto sinTheta = glm::sqrt(1.f - cosTheta * cosTheta);
-    glm::vec3 dir = {glm::cos(phi) * sinTheta, cosTheta, glm::sin(phi) * sinTheta};
+    auto sinTheta = glm::sqrt(glm::clamp(1.f - cosTheta * cosTheta, 0.f, 1.f));
+    glm::vec3 dir = {glm::cos(phi) * sinTheta, glm::sin(phi) * sinTheta, cosTheta};
 
-    auto biTngnt = glm::normalize(glm::cross(tngnt, norm));
-    return glm::normalize(glm::mat3(tngnt, norm, biTngnt) * dir);
+    auto biTngnt = glm::normalize(glm::cross(norm, tngnt));
+    return glm::normalize(glm::mat3(tngnt, biTngnt, norm) * dir);
 }
 
 } // namespace Math
