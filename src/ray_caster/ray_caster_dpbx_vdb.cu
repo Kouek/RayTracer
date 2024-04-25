@@ -52,7 +52,7 @@ __device__ void rayCastVDB(const kouek::RayCaster::RayCaster::RenderParameter &r
     // Hit the scene
     auto hit = eyeRay.Hit(AABB::CreateNormalized());
     if constexpr (CullWhenNotHitVol)
-        if (hit.tEnter > hit.tExit)
+        if (hit.tEnter >= hit.tExit)
             return;
     if constexpr (!std::is_same_v<decltype(callbacks.scnSpaceCallback), nullptr_t>)
         callbacks.scnSpaceCallback(hit.tEnter, hit.tExit);
@@ -64,7 +64,7 @@ __device__ void rayCastVDB(const kouek::RayCaster::RayCaster::RenderParameter &r
     // Hit the volume
     hit = eyeRay.Hit(AABB{.minPos = {0.f, 0.f, 0.f}, .maxPos = vdbParam.voxPerVol});
     if constexpr (CullWhenNotHitVol)
-        if (hit.tEnter > hit.tExit)
+        if (hit.tEnter >= hit.tExit)
             return;
     if constexpr (!std::is_same_v<decltype(callbacks.volSpaceCallback), nullptr_t>)
         callbacks.volSpaceCallback(hit.tEnter, hit.tExit);
@@ -74,7 +74,7 @@ __device__ void rayCastVDB(const kouek::RayCaster::RayCaster::RenderParameter &r
                           .maxPos = {vdbParam.voxPerVDB, vdbParam.voxPerVDB, vdbParam.voxPerVDB}});
     if constexpr (!std::is_same_v<decltype(callbacks.vdbSpaceCallback), nullptr_t>)
         callbacks.vdbSpaceCallback(hit.tEnter, hit.tExit);
-    if (hit.tEnter > hit.tExit)
+    if (hit.tEnter >= hit.tExit)
         return;
 
     auto stk = RayCaster::VDBStack::Create(vdb);
@@ -142,9 +142,8 @@ __device__ bool depthSkip(InLeafFuncParameter &param, const glm::vec3 &posInBric
                           const kouek::RayCaster::DepthBoxVDB::DeviceData &vdb,
                           kouek::Ray &eyeRay) {
     kouek::RayCaster::DepthDDA2D ddda2d;
-    if (!ddda2d.Init(param.tCurr, vdb.vdbParam.voxsPerChild[1] - 1.f,
-                     vdb.vdbParam.minDepPosValInBrick, vdb.vdbParam.maxDepPosValInBrick, posInBrick,
-                     eyeRay))
+    if (!ddda2d.Init(param.tCurr, vdb.vdbParam.voxsPerChild[1], vdb.vdbParam.minDepPosValInBrick,
+                     vdb.vdbParam.maxDepPosValInBrick, posInBrick, eyeRay))
         return false;
 
     while (true) {
@@ -343,7 +342,7 @@ __device__ uchar4 renderDepths(uint8_t displayLeafLayer,
                         vdb.vdbParam.apronDepWid);
 
                 kouek::RayCaster::DepthDDA2D ddda2d;
-                if (ddda2d.Init(param.tCurr, vdb.vdbParam.voxsPerChild[1] - 1.f,
+                if (ddda2d.Init(param.tCurr, vdb.vdbParam.voxsPerChild[1],
                                 vdb.vdbParam.minDepPosValInBrick, vdb.vdbParam.maxDepPosValInBrick,
                                 posInBrick, eyeRay)) {
                     auto dep =
@@ -493,6 +492,7 @@ void kouek::RayCaster::RayCaster::RenderDepthBoxVDB(cudaSurfaceObject_t rndrTo,
                 // Transform from world to scene
                 tmp = glm::vec4(eyeRay.dir, 0.f);
                 tmp = rndrParamPtr->w2s * tmp;
+                eyeRay.dir = tmp;
                 eyeRay.dir = glm::normalize(eyeRay.dir);
 
                 tmp = glm::vec4(rndrParamPerFramePtr->eyePos2w, 1.f);

@@ -199,6 +199,7 @@ void kouek::RayCaster::RayCaster::RenderRAWVolume(cudaSurfaceObject_t rndrTo,
                 // Transform from world to scene
                 tmp = glm::vec4(eyeRay.dir, 0.f);
                 tmp = rndrParamPtr->w2s * tmp;
+                eyeRay.dir = tmp;
                 eyeRay.dir = glm::normalize(eyeRay.dir);
 
                 tmp = glm::vec4(rndrParamPerFramePtr->eyePos2w, 1.f);

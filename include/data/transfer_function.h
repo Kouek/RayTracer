@@ -102,7 +102,6 @@ template <typename T, T Min, T Max, T IncStep> class TransferFunction {
 
         auto pnt = pnts.begin();
         auto prevPnt = pnts.begin();
-        ++prevPnt;
 
         glm::vec2 emptyScalarRng = {Max, Min};
         for (auto scalar = Min; scalar < Max; scalar += IncStep) {
@@ -121,7 +120,7 @@ template <typename T, T Min, T Max, T IncStep> class TransferFunction {
                 emptyScalarRng = {Max, Min};
             }
 
-            auto a = (scalar - prevS) / (s - prevS);
+            auto a = s == prevS ? 1.f : (scalar - prevS) / (s - prevS);
             dat.emplace_back((1.f - a) * prevC + a * c);
         }
         dat.emplace_back(pnt->second);

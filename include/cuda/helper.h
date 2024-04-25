@@ -37,6 +37,11 @@ constexpr auto FloatMin = std::numeric_limits<float>::lowest();
 constexpr auto FloatMax = std::numeric_limits<float>::max();
 constexpr auto FloatEps = std::numeric_limits<float>::epsilon();
 
+constexpr uint32_t ThreadPerBlockX = 16;
+constexpr uint32_t ThreadPerBlockY = 16;
+constexpr uint32_t ThreadPerBlockZ = 16;
+constexpr uint32_t ThreadPerBlockYxX = ThreadPerBlockX * ThreadPerBlockY;
+
 } // namespace CUDA
 } // namespace kouek
 

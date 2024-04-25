@@ -236,14 +236,14 @@ void updateAtlas(std::shared_ptr<kouek::CUDA::Array> &atlasArr,
                                            : glm::vec3{0.f, 1.f, 0.f};
             // Ignore the first 3x3 of the 0-th depth
             auto voxInVDB = glm::vec3(minVoxPosInVDB) +
-                            glm::vec3{depDir.x == 1    ? 1.f
-                                      : depDir.x == -1 ? vdbParam.dims[0] - 2
+                            glm::vec3{depDir.x == 1    ? 0.f
+                                      : depDir.x == -1 ? vdbParam.dims[0] - 1
                                                        : voxInAtlasBrick.x - vdbParam.apronDepWid,
-                                      depDir.y == 1    ? 1.f
-                                      : depDir.y == -1 ? vdbParam.dims[0] - 2
+                                      depDir.y == 1    ? 0.f
+                                      : depDir.y == -1 ? vdbParam.dims[0] - 1
                                                        : voxInAtlasBrick.y - vdbParam.apronDepWid,
-                                      depDir.z == 1    ? 1.f
-                                      : depDir.z == -1 ? vdbParam.dims[0] - 2
+                                      depDir.z == 1    ? 0.f
+                                      : depDir.z == -1 ? vdbParam.dims[0] - 1
                                                        : voxInAtlasBrick.z - vdbParam.apronDepWid};
 
             kouek::RayCaster::DepthBoxVDB::CoordValTy dep;

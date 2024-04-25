@@ -199,14 +199,15 @@ template <typename VoxelType> int run(const cli::Parser &parser) {
         return 1;
 
     auto trDim = vol.GetDimension();
-    auto spaces = [&]() {
+    auto scales = [&]() {
         glm::vec3 spaces;
         spaces.x = parser.get<float>("sx");
         spaces.y = parser.get<float>("sy");
         spaces.z = parser.get<float>("sz");
-        return spaces;
+
+        float minOfDim = std::min({trDim.x, trDim.y, trDim.z});
+        return spaces / minOfDim * glm::vec3(trDim);
     }();
-    auto invSpaces = 1.f / spaces;
 
     auto tf = [&]() {
         auto tfPath = parser.get<std::string>("tf");
@@ -268,7 +269,8 @@ template <typename VoxelType> int run(const cli::Parser &parser) {
     }
 
     kouek::RayCaster::RayCaster rayCaster;
-    auto w2s = glm::translate(glm::identity<glm::mat4>(), glm::vec3(.5f));
+    auto w2s = glm::scale(glm::identity<glm::mat4>(), 1.f / scales) *
+               glm::translate(glm::identity<glm::mat4>(), glm::vec3(.5f) * scales);
     rayCaster.SetWorldToScene(w2s);
     rayCaster.SetRAWVolume(volTex);
     rayCaster.SetTransferFunctionTexture(tfTex);
@@ -332,8 +334,8 @@ template <typename VoxelType> int run(const cli::Parser &parser) {
                         });
     if (!app.ok)
         return 1;
-    app.camera.LookAt({0.f, 0.f, 1.f}, {0.f, 0.f, 0.f});
-    app.movSens = .01f;
+    app.camera.LookAt({0.f, 0.f, std::max({scales.x, scales.y, scales.z})}, {0.f, 0.f, 0.f});
+    app.movSens = .01f * std::max({scales.x, scales.y, scales.z});
     app.callerOnCameraChanged(app.camera);
 
     cudaEvent_t start, stop;
@@ -347,7 +349,9 @@ template <typename VoxelType> int run(const cli::Parser &parser) {
     onPerfTestStarted = [&]() {
         perfCost = 0.f;
         perfRotDeg = 0.f;
-        perfCam.LookAt({0.f, 0.f, perfTestInVol ? .2f : 1.f}, {0.f, 0.f, 0.f});
+        perfCam.LookAt(
+            {0.f, 0.f, (perfTestInVol ? .2f : 1.f) * std::max({scales.x, scales.y, scales.z})},
+            {0.f, 0.f, 0.f});
         app.banInput = true;
 
         inPerfTest = true;
@@ -418,7 +422,7 @@ template <typename VoxelType> int run(const cli::Parser &parser) {
     return 0;
 }
 
-enum class SupportedVoxelTypes { UInt8, UInt16 };
+enum class SupportedVoxelTypes { None, UInt8, UInt16 };
 inline SupportedVoxelTypes fromNameToVoxelType(const std::string &name) {
     auto lowercase = name;
     std::transform(lowercase.begin(), lowercase.end(), lowercase.begin(),
@@ -428,6 +432,7 @@ inline SupportedVoxelTypes fromNameToVoxelType(const std::string &name) {
         return SupportedVoxelTypes::UInt8;
     if (lowercase == "uint16")
         return SupportedVoxelTypes::UInt16;
+    return SupportedVoxelTypes::None;
 }
 
 int main(int argc, char **argv) {

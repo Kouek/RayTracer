@@ -95,7 +95,6 @@ struct KOUEK_CUDA_ALIGN DepthDDA2D {
                                   int32_t maxDepPosValInBrick, const glm::vec3 &posInBrick,
                                   const kouek::Ray &ray) {
         dep = 0.f;
-        this->posInBrick = glm::floor(posInBrick);
         sign = {ray.dir.x > 0.f   ? 1
                 : ray.dir.x < 0.f ? -1
                                   : 0,
@@ -118,9 +117,9 @@ struct KOUEK_CUDA_ALIGN DepthDDA2D {
                                  sign.z == 0  ? INFINITY
                                  : sign.z > 0 ? posInBrick.z
                                               : maxPosValInBrick - posInBrick.z};
-            depSign.x = (distToAxis.x < distToAxis.y && distToAxis.x <= distToAxis.z) ? sign.x : 0;
-            depSign.y = (distToAxis.y < distToAxis.z && distToAxis.y <= distToAxis.x) ? sign.y : 0;
-            depSign.z = (distToAxis.z < distToAxis.x && distToAxis.z <= distToAxis.y) ? sign.z : 0;
+            depSign.x = distToAxis.x < distToAxis.y && distToAxis.x <= distToAxis.z ? sign.x : 0;
+            depSign.y = distToAxis.y < distToAxis.z && distToAxis.y <= distToAxis.x ? sign.y : 0;
+            depSign.z = distToAxis.z < distToAxis.x && distToAxis.z <= distToAxis.y ? sign.z : 0;
 
             if (depSign.x != 0 && distToAxis.x >= .5f)
                 return false;
@@ -131,8 +130,8 @@ struct KOUEK_CUDA_ALIGN DepthDDA2D {
         }
 
         tDlt = glm::abs(1.f / ray.dir);
-        auto pFlt = posInBrick;
-        tSide = ((glm::floor(pFlt) - pFlt + .5f) * glm::vec3{sign} + .5f) * tDlt + t;
+        this->posInBrick = glm::floor(posInBrick);
+        tSide = ((glm::floor(posInBrick) - posInBrick + .5f) * glm::vec3{sign} + .5f) * tDlt + t;
 
         if (depSign.x != 0) {
             this->posInBrick.x = depSign.x == 1 ? minDepPosValInBrick : maxDepPosValInBrick;

@@ -19,6 +19,7 @@ class RayCaster : Noncopyable {
         bool useShading = false;
         glm::mat4 w2s;
         glm::mat4 invProj;
+        glm::vec3 spaces;
         float maxAlpha = .9f;
         float samplingRate = 3.f;
         float ka, kd, ks, shiness;
